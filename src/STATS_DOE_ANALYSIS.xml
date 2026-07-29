@@ -1,0 +1,152 @@
+<!-- ***************************************************************** -->
+<!--                                                                   -->
+<!-- Licensed Materials - Property of IBM                              -->
+<!--                                                                   -->
+<!-- IBM SPSS Products: Statistics Common                              -->
+<!--                                                                   -->
+<!-- (C) Copyright IBM Corp. 1989, 2024                                -->
+<!--                                                                   -->
+<!-- US Government Users Restricted Rights - Use, duplication or       -->
+<!-- disclosure restricted by GSA ADP Schedule Contract with IBM       -->
+<!-- Corp.                                                             -->
+<!--                                                                   -->
+<!-- ***************************************************************** -->
+<!-- Enhanced DoE Command XML with Minitab-like Features -->
+<Command xmlns="http://xml.spss.com/spss/extension" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="extension-1.0.xsd" Name="STATS DOE ANALYSIS" Language="R">
+	<Subcommand Name="">
+		<Parameter Name="GENERATEDESIGN" ParameterType="Keyword">
+			<EnumValue>yes</EnumValue>
+			<EnumValue>no</EnumValue>
+		</Parameter>
+		<Parameter Name="VARNAMES" ParameterType="VariableNameList"/>
+		<Parameter Name="FORMULA" ParameterType="QuotedString"/>
+		<Parameter Name="FACTORS" ParameterType="KeywordList">
+			<EnumValue>yes</EnumValue>
+			<EnumValue>no</EnumValue>
+		</Parameter>
+		<Parameter Name="MIXTURES" ParameterType="KeywordList">
+			<EnumValue>yes</EnumValue>
+			<EnumValue>no</EnumValue>
+		</Parameter>
+		<Parameter Name="LOWS" ParameterType="NumberList"/>
+		<Parameter Name="HIGHS" ParameterType="NumberList"/>
+		<Parameter Name="CENTERS" ParameterType="NumberList"/>
+		<Parameter Name="ROUNDTOS" ParameterType="IntegerList"/>
+		<Parameter Name="LEVELS" ParameterType="IntegerList"/>
+		<Parameter Name="DESIGNTYPE" ParameterType="Keyword">
+			<EnumValue>optimal</EnumValue>
+			<EnumValue>factorial</EnumValue>
+			<EnumValue>plackettburman</EnumValue>
+			<EnumValue>rsm</EnumValue>
+			<EnumValue>boxbehnken</EnumValue>
+			<EnumValue>ccd</EnumValue>
+			<EnumValue>taguchi</EnumValue>
+			<EnumValue>lhs</EnumValue>
+			<EnumValue>dsd</EnumValue>
+			<EnumValue>fullfactorial</EnumValue>
+		</Parameter>
+		<!-- MODEL applies only when DESIGNTYPE=OPTIMAL: it selects the curvature
+		     model (LINEAR/QUAD/CUBIC/CUBICS, or a custom FORMULA=) used to build
+		     the optimal-design candidate search. For every other DESIGNTYPE
+		     (FACTORIAL, PLACKETTBURMAN, RSM, BOXBEHNKEN, CCD, TAGUCHI, LHS, DSD,
+		     FULLFACTORIAL), the design generator builds its own intrinsic point
+		     structure and MODEL is ignored for generation purposes. -->
+		<Parameter Name="MODEL" ParameterType="Keyword"/>
+		<Parameter Name="TRIALS" ParameterType="Integer"/>
+		<Parameter Name="CONSTANT" ParameterType="Keyword"/>
+		<Parameter Name="CONSTRAINTFUNC" ParameterType="InputFile"/>
+		<Parameter Name="MIXTURESUM" ParameterType="Number"/>
+		<!-- NEW: Enhanced parameters for Minitab-like features -->
+		<Parameter Name="RANDOMIZE" ParameterType="Keyword"/>
+		<Parameter Name="BLOCKS" ParameterType="Integer"/>
+		<Parameter Name="REPLICATES" ParameterType="Integer"/>
+		<!-- NEW: Screening Designs subdialog - center points for 2-level screening designs -->
+		<Parameter Name="SCREENINGCENTERPTS" ParameterType="Keyword"/>
+		<Parameter Name="SCREENINGCENTERPTSCOUNT" ParameterType="Integer"/>
+		<!-- NEW: Sequential DOE - augment an existing factorial design (read from
+		     the active dataset) to a Central Composite Design by adding axial
+		     (star) points, OFF by default. -->
+		<Parameter Name="AUGMENTTOCCD" ParameterType="Keyword"/>
+		<Parameter Name="AUGMENTCENTERPTS" ParameterType="Integer"/>
+		<Parameter Name="RESPONSEVAR" ParameterType="VariableNameList"/>
+		<Parameter Name="ANALYZE" ParameterType="Keyword"/>
+		<Parameter Name="CREATEPLOTS" ParameterType="Keyword"/>
+		<Parameter Name="OPTIMIZERESPONSE" ParameterType="Keyword"/>
+		<Parameter Name="OPTIMIZATIONGOAL" ParameterType="Keyword"/>
+		<!-- NEW: Multi-response simultaneous optimization (composite desirability) -->
+		<Parameter Name="OPTIMIZATIONGOALS" ParameterType="KeywordList"/>
+		<!-- NEW: Variable selection — stepwise (AIC) or best subsets -->
+		<Parameter Name="VARSELECT" ParameterType="Keyword">
+			<EnumValue>yes</EnumValue>
+			<EnumValue>no</EnumValue>
+		</Parameter>
+		<Parameter Name="VARSELMETHOD" ParameterType="Keyword">
+			<EnumValue>stepwise</EnumValue>
+			<EnumValue>bestsubsets</EnumValue>
+		</Parameter>
+		<Parameter Name="STEPDIR" ParameterType="Keyword">
+			<EnumValue>both</EnumValue>
+			<EnumValue>forward</EnumValue>
+			<EnumValue>backward</EnumValue>
+		</Parameter>
+		<!-- Variable selection charts — original visualisations, not derived from any third-party product -->
+		<Parameter Name="SELECTIONTRACE" ParameterType="Keyword">
+			<EnumValue>yes</EnumValue><EnumValue>no</EnumValue>
+		</Parameter>
+		<Parameter Name="FITPROFILE" ParameterType="Keyword">
+			<EnumValue>yes</EnumValue><EnumValue>no</EnumValue>
+		</Parameter>
+		<Parameter Name="PARSIMONYPLOT" ParameterType="Keyword">
+			<EnumValue>yes</EnumValue><EnumValue>no</EnumValue>
+		</Parameter>
+		<Parameter Name="FACTORMAP" ParameterType="Keyword">
+			<EnumValue>yes</EnumValue><EnumValue>no</EnumValue>
+		</Parameter>
+	</Subcommand>
+	<Subcommand Name="OPTIONS">
+		<Parameter Name="CRITERION" ParameterType="Keyword"/>
+		<Parameter Name="CENTER" ParameterType="Keyword"/>
+		<Parameter Name="DESIGNALG" ParameterType="Keyword"/>
+		<Parameter Name="INITIAL" ParameterType="Keyword"/>
+		<Parameter Name="REPEATS" ParameterType="Integer"/>
+		<Parameter Name="NUMCAND" ParameterType="Integer"/>
+	</Subcommand>
+	<Subcommand Name="OUTPUT">
+		<Parameter Name="CONFOUNDING" ParameterType="Keyword"/>
+		<!-- NEW: Additional output options -->
+		<Parameter Name="MAINEFFECTS" ParameterType="Keyword"/>
+		<Parameter Name="INTERACTIONS" ParameterType="Keyword"/>
+		<Parameter Name="CUBEPLOT" ParameterType="Keyword"/>
+		<Parameter Name="CONTOURPLOT" ParameterType="Keyword"/>
+		<Parameter Name="RESIDUALPLOTS" ParameterType="Keyword"/>
+		<Parameter Name="PARETOPLOT" ParameterType="Keyword"/>
+		<!-- NEW: Curvature Check Plot - average response at factorial (cube)
+		     points vs. center points, visual companion to the curvature term -->
+		<Parameter Name="CURVATUREPLOT" ParameterType="Keyword"/>
+		<Parameter Name="EXTERNALPLOTS" ParameterType="Keyword"/>
+		<!-- NEW: Interactive state-of-the-art HTML report export (additive to static charts) -->
+		<Parameter Name="EXPORTHTML" ParameterType="Keyword"/>
+		<Parameter Name="HTMLPATH" ParameterType="OutputFile"/>
+		<!-- NEW: Output subdialog - additional tables derived from existing results -->
+		<Parameter Name="EFFECTSTABLE" ParameterType="Keyword"/>
+		<Parameter Name="RESIDUALTESTS" ParameterType="Keyword"/>
+		<Parameter Name="VIFTABLE" ParameterType="Keyword"/>
+		<Parameter Name="OPTDETAILTABLE" ParameterType="Keyword"/>
+		<!-- NEW: Screening Designs subdialog - effect ranking/summary table -->
+		<Parameter Name="SCREENINGSUMMARY" ParameterType="Keyword"/>
+	</Subcommand>
+	<!-- NEW: Power and Sample Size calculator (plan run counts before generating a design) -->
+	<Subcommand Name="POWER" Occurrence="Optional">
+		<Parameter Name="POWERTABLE" ParameterType="Keyword"/>
+		<Parameter Name="POWEREFFECTSIZES" ParameterType="NumberList"/>
+		<Parameter Name="POWERRUNS" ParameterType="IntegerList"/>
+		<Parameter Name="POWERALPHA" ParameterType="Number"/>
+		<Parameter Name="POWERTARGET" ParameterType="Number"/>
+	</Subcommand>
+	<Subcommand Name="SAVE" Occurrence="Optional">
+		<Parameter Name="DATASET" ParameterType="DatasetName"/>
+	</Subcommand>
+	<Subcommand Name="HELP" Occurrence="Optional"/>
+</Command>
+
+<!-- Made with Bob -->

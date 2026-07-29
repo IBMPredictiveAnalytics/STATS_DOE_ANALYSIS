@@ -1,0 +1,18 @@
+Name: STATS DOE ANALYSIS
+Display-Name: Design of Experiments Analysis
+Dialog-Specs: STATS_DOE_ANALYSIS.cfe
+Command-Specs: STATS_DOE_ANALYSIS.xml
+Code-Files: STATS_DOE_ANALYSIS.R
+Misc-Files: extsyntax.css,IBMdialogicon.png,markdown.html
+Summary: Generate and analyze experimental designs
+Description: This procedure generates experimental designs (optimal, f
+ actorial,Plackett-Burman, response surface, Box-Behnken, CCD, Taguchi
+ , and LatinHypercube) and optionally analyzes collected response data
+  from them.
+Author: JKP, Aruna Saraswathy IBM SPSS
+Version: 3.0.0
+Product-Version: 18
+Date: 29-jun-2026
+Categories: experimental design
+Plugins: R
+R-Packages: AlgDesign

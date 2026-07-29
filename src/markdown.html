@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<meta http-equiv="x-ua-compatible" content="IE=9" >
+
+<title>STATS DOE ANALYSIS Extension Command</title>
+
+<link rel="stylesheet" type="text/css" href="extsyntax.css" />
+
+</head>
+
+<body>
+<h1>STATS DOE ANALYSIS Extension Command</h1>
+
+<p>Design of Experiments: generate optimal, factorial, screening, response-surface,
+and other experimental designs; analyze the resulting (or an existing) dataset;
+and plan sample size with a power calculator. This page is organized to match the
+dialog: each section below corresponds to one of the dialog's buttons (Factor
+Settings, Options, Constraints, Design Options, Analysis, Output, Screening,
+Power). The Help (?) button on the main dialog opens this page; the buttons on
+each individual sub-dialog do not open their own help (a limitation of the
+dialog platform), so use the links below to jump straight to the section you
+need.</p>
+
+<ul class="toc">
+<li><a href="#maindialog">Main Dialog</a> &mdash; Generate Design, Variable Names, Model Type, Design Type, Output Dataset</li>
+<li><a href="#factorsettingsdlg">Factor Settings</a> &mdash; Lows, Highs, Centers, Round-tos, Levels, Factors, Mixtures</li>
+<li><a href="#optionsdlg">Options</a> &mdash; Optimal Design search algorithm settings</li>
+<li><a href="#constraintsdlg">Constraints</a> &mdash; restrict the candidate design region</li>
+<li><a href="#designoptionsdlg">Design Options</a> &mdash; randomize, blocks, replicates</li>
+<li><a href="#analysisdlg2">Analysis</a> &mdash; fit a model, plots, optimization, variable selection</li>
+<li><a href="#outputdlg">Output</a> &mdash; confounding, tables, HTML export</li>
+<li><a href="#screeningoptsdlg">Screening</a> &mdash; screening center points, Augment to CCD</li>
+<li><a href="#poweroptsdlg">Power</a> &mdash; power and sample size planner</li>
+</ul>
+
+<div class="syntax">
+<p>STATS DOE ANALYSIS<br/>
+GENERATEDESIGN=YES<sup>&#42;&#42;</sup> or NO<br/>
+VARNAMES=<em>list of names for design variables</em><br/>
+LOWS=<em>variable minimum values</em><br/>
+HIGHS=<em>variable maximum values</em><br/>
+CENTERS=<em>variable centering values</em><br/>
+ROUNDTOS=<em>numbers of decimals to round variable values to</em><br/>
+LEVELS=<em>variable numbers of levels</em><br/>
+FACTORS=NO<sup>&#42;&#42;</sup> or YES (per variable)<br/>
+MIXTURES=NO<sup>&#42;&#42;</sup> or YES (per variable)<br/>
+DESIGNTYPE=OPTIMAL<sup>&#42;&#42;</sup> or FACTORIAL or PLACKETTBURMAN or RSM or
+BOXBEHNKEN or CCD or TAGUCHI or LHS or DSD or FULLFACTORIAL<br/>
+MODEL=LINEAR<sup>&#42;&#42;</sup> or QUAD or CUBIC or CUBICS<br/>
+FORMULA=<em>"R model formula"</em><br/>
+CONSTRAINTFUNC=<em>"file containing function for trimming design region"</em><br/>
+TRIALS=<em>number of trials</em><br/>
+CONSTANT=YES<sup>&#42;&#42;</sup> or NO<br/>
+MIXTURESUM=<em>mixture sum (default 1)</em><br/>
+RANDOMIZE=YES or NO<sup>&#42;&#42;</sup><br/>
+BLOCKS=<em>number of blocks</em><br/>
+REPLICATES=<em>number of replicates</em><br/>
+SCREENINGCENTERPTS=YES or NO<sup>&#42;&#42;</sup><br/>
+SCREENINGCENTERPTSCOUNT=<em>number of center points</em><br/>
+AUGMENTTOCCD=YES or NO<sup>&#42;&#42;</sup><br/>
+AUGMENTCENTERPTS=<em>number of center points to add</em><br/>
+RESPONSEVAR=<em>response variable name(s)</em><br/>
+ANALYZE=YES or NO<sup>&#42;&#42;</sup><br/>
+CREATEPLOTS=YES or NO<sup>&#42;&#42;</sup><br/>
+MAINEFFECTS=YES or NO / INTERACTIONS=YES or NO / CUBEPLOT=YES or NO /
+CONTOURPLOT=YES or NO / RESIDUALPLOTS=YES or NO / PARETOPLOT=YES or NO /
+CURVATUREPLOT=YES or NO / EXTERNALPLOTS=YES or NO<br/>
+OPTIMIZERESPONSE=YES or NO<sup>&#42;&#42;</sup><br/>
+OPTIMIZATIONGOAL=MAXIMIZE<sup>&#42;&#42;</sup> or MINIMIZE or TARGET<br/>
+OPTIMIZATIONGOALS=<em>list of goals, one per response variable</em><br/>
+VARSELECT=YES or NO<sup>&#42;&#42;</sup><br/>
+VARSELMETHOD=STEPWISE<sup>&#42;&#42;</sup> or BESTSUBSETS<br/>
+STEPDIR=BOTH<sup>&#42;&#42;</sup> or FORWARD or BACKWARD<br/>
+SELECTIONTRACE=YES or NO / FITPROFILE=YES or NO / PARSIMONYPLOT=YES or NO /
+FACTORMAP=YES or NO</p>
+
+<p>/OPTIONS CRITERION=D<sup>&#42;&#42;</sup> or A<br/>
+CENTER=NO<sup>&#42;&#42;</sup> or YES<br/>
+DESIGNALG=EXACT<sup>&#42;&#42;</sup> or APPROX<br/>
+INITIAL=RANDOM<sup>&#42;&#42;</sup> or NULLIFICATION<br/>
+REPEATS=<em>number of repeats of design generation (default 5)</em><br/>
+NUMCAND=<em>number of candidate points to generate</em></p>
+
+<p>/OUTPUT CONFOUNDING=YES<sup>&#42;&#42;</sup> or NO<br/>
+MAINEFFECTS=YES or NO / INTERACTIONS=YES or NO / CUBEPLOT=YES or NO /
+CONTOURPLOT=YES or NO / RESIDUALPLOTS=YES or NO / PARETOPLOT=YES or NO /
+CURVATUREPLOT=YES or NO / EXTERNALPLOTS=YES or NO<br/>
+EXPORTHTML=YES<sup>&#42;&#42;</sup> or NO<br/>
+HTMLPATH=<em>"output file path"</em><br/>
+EFFECTSTABLE=YES or NO / RESIDUALTESTS=YES or NO / VIFTABLE=YES or NO /
+OPTDETAILTABLE=YES or NO / SCREENINGSUMMARY=YES or NO</p>
+
+<p>/POWER POWERTABLE=YES or NO<sup>&#42;&#42;</sup><br/>
+POWEREFFECTSIZES=<em>list of effect sizes</em><br/>
+POWERRUNS=<em>list of run counts</em><br/>
+POWERALPHA=<em>significance level (default 0.05)</em><br/>
+POWERTARGET=<em>target power (default 0.8)</em></p>
+
+<p>/SAVE DATASET=<em>output dataset name</em><br/>
+(required when GENERATEDESIGN=YES; optional otherwise)</p>
+
+<p>/HELP</p>
+
+<p><sup>&#42;&#42;</sup> Default</p>
+</div>
+
+<p>STATS DOE ANALYSIS /HELP prints this information and does nothing else.</p>
+
+<pre class="example"><code>STATS DOE ANALYSIS
+GENERATEDESIGN=YES
+VARNAMES=v1 v2 LOWS=-100 -50 HIGHS=100 50 CENTERS=0 1
+LEVELS=5 4 ROUNDTOS=0 0 FACTORS=YES NO MIXTURES=NO
+DESIGNTYPE=OPTIMAL MODEL=QUAD CONSTANT=YES
+/OPTIONS CRITERION=D CENTER=NO INITIAL=RANDOM REPEATS=5
+/OUTPUT CONFOUNDING=YES
+/SAVE DATASET=output.
+</code></pre>
+
+<hr/>
+
+<a id="designtab"></a><a id="maindialog"></a>
+<h2>Main Dialog &mdash; Generate Design, Model Type, Design Type</h2>
+
+<p><strong>Generate Design</strong> (GENERATEDESIGN) turns design generation on or
+off. When checked (YES, the default), the procedure builds a new experimental design
+from Variable Names and Factor Settings, and the Output Dataset field becomes
+required. When unchecked (NO), the procedure instead reads the active dataset for
+analysis only &mdash; Variable Names, Factor Settings, Model Type, Design Type, and
+the Options/Constraints/Design Options screens are all unused in that mode and are
+greyed out, and Output Dataset becomes optional (it is only needed if you also use
+Augment to CCD on the Screening screen, which saves its own augmented dataset).</p>
+
+<p><strong>Variable Names</strong> (VARNAMES) lists one or more variable names for
+the design variables, separated by spaces. The order here sets the order used by
+every Factor Settings field.</p>
+
+<p><strong>Model Type</strong> (MODEL / FORMULA) selects the curvature model used
+when Design Type is Optimal Design: Linear, Quadratic, Cubic, CubicS (a version of
+the cubic model that stays non-singular for mixture variables), or a Custom Formula.
+A custom formula is an R model formula starting with <code>~</code>, using
+<code>+</code>, <code>*</code>, and <code>:</code> for linear, interaction, and
+nested terms (e.g. <code>~x1 + x2 + x1*x2</code>); the variable names in the formula
+must match Variable Names. Either Model Type or a custom Formula must be given, not
+both. Model Type only applies to Optimal Design &mdash; every other Design Type
+builds its own intrinsic run structure and ignores this setting.</p>
+
+<p><strong>Design Type</strong> (DESIGNTYPE) chooses the kind of design to generate:</p>
+<ul>
+<li><strong>Optimal Design</strong> &mdash; Monte Carlo D- or A-optimal search (see Options)</li>
+<li><strong>Factorial Design</strong> &mdash; full or fractional 2-level factorial, 2^k runs</li>
+<li><strong>Plackett-Burman Design</strong> &mdash; screening design, runs round up to a multiple of 4</li>
+<li><strong>Response Surface Design</strong> &mdash; for optimization studies</li>
+<li><strong>Box-Behnken Design</strong> &mdash; 3-level design for quadratic models</li>
+<li><strong>Central Composite Design (CCD)</strong> &mdash; factorial core plus axial/star points</li>
+<li><strong>Taguchi Design</strong> &mdash; orthogonal array, runs round up to a power of 2</li>
+<li><strong>Latin Hypercube Sampling</strong> &mdash; space-filling design for simulation</li>
+<li><strong>Definitive Screening (DSD)</strong> &mdash; 3-level screening design, runs = 2k+1</li>
+<li><strong>Full Factorial</strong> &mdash; every combination of every factor's levels</li>
+</ul>
+
+<p><strong>Output Dataset</strong> (SAVE DATASET) names the dataset that receives
+the generated design (or the augmented design, if Augment to CCD is used). The name
+must not already be in use. It is required whenever Generate Design is checked;
+otherwise it is optional.</p>
+
+<hr/>
+
+<a id="factorsettingsdlg"></a><a id="factorsettings"></a><a id="factorsettings.buttonResKey"></a>
+<h2>Factor Settings</h2>
+
+<p>One value is given per variable in Variable Names (or a single value to apply to
+all variables). The first four properties do not apply to factor variables, but a
+value must still be given for them if the design mixes factor and non-factor
+variables, to keep every list aligned by variable position.</p>
+<ul>
+<li><strong>Lows</strong> (LOWS) &mdash; minimum values</li>
+<li><strong>Highs</strong> (HIGHS) &mdash; maximum values</li>
+<li><strong>Centers</strong> (CENTERS) &mdash; centering values; left blank, the midpoint
+of Lows/Highs is used automatically</li>
+<li><strong>Round-tos</strong> (ROUNDTOS) &mdash; number of decimal places to round
+sampled values to (e.g. 2 rounds to two decimal places)</li>
+<li><strong>Levels</strong> (LEVELS) &mdash; number of distinct levels to sample from;
+0 or blank uses a default (2 for most designs, or more automatically for a curvature
+Optimal model, to avoid a singular design)</li>
+<li><strong>Factors</strong> (FACTORS) &mdash; Yes/No: is this variable categorical?</li>
+<li><strong>Mixtures</strong> (MIXTURES) &mdash; Yes/No: is this variable part of a
+mixture? Mixture variables are always sampled between 0 and 1, and if any variable
+is a mixture the constant term is automatically suppressed. A variable flagged as
+both Factor and Mixture is treated as a mixture.</li>
+</ul>
+<p>Lows and Highs are required for every ordinary (non-factor, non-mixture)
+variable.</p>
+
+<hr/>
+
+<a id="optionsdlg"></a><a id="options"></a><a id="options.buttonResKey"></a>
+<h2>Options</h2>
+
+<p>Controls the Optimal Design search algorithm.</p>
+<ul>
+<li><strong>Criterion</strong> (CRITERION) &mdash; D (a scaling of the generalized
+variance of the design matrix) or A (proportional to the average variance of the
+parameter estimates)</li>
+<li><strong>Center points</strong> (CENTER) &mdash; whether non-factor variables are
+centered before a design is evaluated</li>
+<li><strong>Random start</strong> (INITIAL) &mdash; Random or Nullification. Nullification
+successively adds points from fresh samples of candidate points and generally
+produces better designs, at the cost of more time</li>
+<li><strong>Design algorithm</strong> (DESIGNALG) &mdash; Exact (an exact design is
+calculated) or Approximate (an approximate theory design is calculated)</li>
+<li><strong>Repeats</strong> (REPEATS) &mdash; how many times the whole search is
+repeated, keeping the best design found (default 5)</li>
+<li><strong>Num. candidates</strong> (NUMCAND) &mdash; number of candidate points to
+generate; defaults to ten times the number of terms in the model</li>
+<li><strong>Trials</strong> (TRIALS) &mdash; number of runs in the design; defaults to
+the number of model terms plus five, must be more than the number of terms and no
+more than Num. candidates</li>
+<li><strong>Constant</strong> (CONSTANT) &mdash; include a constant term (automatically
+suppressed for mixtures)</li>
+<li><strong>Mixture sum</strong> (MIXTURESUM) &mdash; the sum mixture variables must add
+to (default 1)</li>
+</ul>
+
+<hr/>
+
+<a id="constraintsdlg"></a><a id="constraintfunc"></a><a id="constraintfunc.buttonResKey"></a>
+<h2>Constraints</h2>
+
+<p>By default every point within the Lows/Highs ranges is a valid candidate. A
+<strong>constraint function</strong> (CONSTRAINTFUNC) restricts the candidate region
+across variables: it names a file containing an R function called <code>dfilter</code>
+that takes a candidate point's coordinates and returns TRUE (keep) or FALSE
+(reject). Example:</p>
+<pre class="example"><code>
+dfilter = function(x) {
+    if (sum(x) &lt;= .75) {
+        return(TRUE)
+    } else {
+        return(FALSE)
+    }
+}
+</code></pre>
+<p>This keeps only candidate points whose coordinates sum to .75 or less. Only used
+with Optimal Design.</p>
+
+<hr/>
+
+<a id="designoptionsdlg"></a><a id="designoptions"></a><a id="designoptions.buttonResKey"></a>
+<h2>Design Options</h2>
+
+<ul>
+<li><strong>Randomize run order</strong> (RANDOMIZE) &mdash; randomize the run order
+of the generated design</li>
+<li><strong>Blocks</strong> (BLOCKS) &mdash; number of blocks to divide the design into</li>
+<li><strong>Replicates</strong> (REPLICATES) &mdash; number of times to replicate the
+entire design (applies to Optimal, LHS, Taguchi, Box-Behnken, CCD, and RSM designs)</li>
+</ul>
+
+<hr/>
+
+<a id="analysisdlg2"></a><a id="analysis2"></a><a id="analysis2.buttonResKey"></a>
+<h2>Analysis</h2>
+
+<p><strong>Analyze</strong> (ANALYZE) fits a model to the response and enables the
+rest of this screen.</p>
+<p><strong>Response Variable</strong> (RESPONSEVAR) names one or more response
+variables to analyze; with more than one, results are produced for each.</p>
+<p><strong>Create plots</strong> (CREATEPLOTS) turns on the plot options below it:
+Main Effects, Interactions, Cube Plot, Contour Plot, Residual Plots, Pareto Plot,
+Curvature Plot (average response at factorial/cube points vs. center points), and
+External Plots.</p>
+<p><strong>Optimize response</strong> (OPTIMIZERESPONSE) searches for factor settings
+that best satisfy an <strong>Optimization goal</strong> (OPTIMIZATIONGOAL): Maximize,
+Minimize, or Target. With multiple response variables, per-response goals can be
+given in <strong>Optimization goals</strong> (OPTIMIZATIONGOALS); any left unset fall
+back to the single Optimization goal.</p>
+<p><strong>Variable selection</strong> (VARSELECT) reduces the model with either the
+<strong>Method</strong> (VARSELMETHOD) Stepwise (AIC-based, direction set by
+<strong>Step direction</strong> / STEPDIR: Both, Forward, or Backward) or Best
+Subsets. Selection Trace, Fit Profile, Parsimony Plot, and Factor Map are optional
+diagnostic charts for the selection process.</p>
+
+<hr/>
+
+<a id="outputdlg"></a><a id="outputopts"></a><a id="outputopts.buttonResKey"></a>
+<h2>Output</h2>
+
+<p><strong>Confounding</strong> (CONFOUNDING) displays a table of the regression
+coefficients of each variable on all the others (this same checkbox also appears on
+the Options screen; both control the same setting). Additional tables:
+<strong>Effects table</strong> (EFFECTSTABLE), <strong>Residual tests</strong>
+(RESIDUALTESTS), <strong>VIF table</strong> (VIFTABLE, variance inflation factors),
+<strong>Optimal design detail table</strong> (OPTDETAILTABLE), and
+<strong>Screening summary</strong> (SCREENINGSUMMARY, an effect-ranking table for
+screening designs). <strong>Export HTML</strong> (EXPORTHTML) additionally writes an
+interactive HTML report; its location is set by HTMLPATH, or otherwise defaults to a
+timestamped file next to the dataset.</p>
+
+<hr/>
+
+<a id="screeningoptsdlg"></a><a id="screeningopts"></a><a id="screeningopts.buttonResKey"></a>
+<h2>Screening</h2>
+
+<p><strong>Screening center points</strong> (SCREENINGCENTERPTS) adds center points
+to a 2-level screening design; <strong>count</strong> (SCREENINGCENTERPTSCOUNT) sets
+how many. Only meaningful when Generate Design is checked.</p>
+<p><strong>Augment to CCD</strong> (AUGMENTTOCCD) is a sequential-design feature: it
+reads an existing factorial design and response data from the active dataset and adds
+axial (star) points to form a face-centered Central Composite Design, saved to a new
+dataset named in Output Dataset. <strong>Augment center points</strong>
+(AUGMENTCENTERPTS) sets how many center points to add. Unlike the other controls on
+this screen, Augment to CCD works whether Generate Design is checked or unchecked
+&mdash; the typical use is with Generate Design unchecked, augmenting a design you
+already ran.</p>
+
+<hr/>
+
+<a id="poweroptsdlg"></a><a id="poweropts"></a><a id="poweropts.buttonResKey"></a>
+<h2>Power</h2>
+
+<p>A standalone power and sample size planner, independent of Generate Design &mdash;
+useful for deciding how many runs a design needs before building it.</p>
+<ul>
+<li><strong>Display power and sample size table</strong> (POWERTABLE) turns the
+calculator on</li>
+<li><strong>Effect sizes</strong> (POWEREFFECTSIZES, in standard deviation units) and
+<strong>Number of runs to evaluate</strong> (POWERRUNS) each accept one or more
+values, evaluated in combination</li>
+<li><strong>Significance level / alpha</strong> (POWERALPHA) &mdash; default 0.05</li>
+<li><strong>Target power</strong> (POWERTARGET) &mdash; default 0.8</li>
+</ul>
+
+<hr/>
+
+<h3>An Operational Note</h3>
+<p>If there is only one design variable, it will always be
+named X1, and some numbers in the design evaluation table will
+be missing.</p>
+
+<h3>Acknowledgements</h3>
+<p>This procedure uses the AlgDesign package by Bob Wheeler.  Documentation
+for formulas can be found in the help for that procedure, including the vignette,
+Comments on Optimal Design.</p>
+Wheeler, R.E. (2004). optMonteCarlo. AlgDesign. The R project for statistical computing http://www.r-project.org/
+
+<p>&copy; Copyright IBM Corp. 1989, 2026</p>
+
+</body>
+
+</html>
