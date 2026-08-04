@@ -75,6 +75,12 @@
 		<Parameter Name="OPTIMIZATIONGOAL" ParameterType="Keyword"/>
 		<!-- NEW: Multi-response simultaneous optimization (composite desirability) -->
 		<Parameter Name="OPTIMIZATIONGOALS" ParameterType="KeywordList"/>
+		<!-- NEW: numeric target value(s) for OPTIMIZATIONGOAL/OPTIMIZATIONGOALS
+		     equal to "target"; previously there was no way to specify what
+		     "target" should aim for, it silently defaulted to the mean of
+		     the observed response. -->
+		<Parameter Name="OPTIMIZATIONTARGET" ParameterType="Number"/>
+		<Parameter Name="OPTIMIZATIONTARGETS" ParameterType="NumberList"/>
 		<!-- NEW: Variable selection — stepwise (AIC) or best subsets -->
 		<Parameter Name="VARSELECT" ParameterType="Keyword">
 			<EnumValue>yes</EnumValue>

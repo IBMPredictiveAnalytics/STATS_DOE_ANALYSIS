@@ -255,7 +255,17 @@ optdesmc <- function(varnames=NULL, frml=NULL, factors="no",
     # a very long time. Reverted to FALSE, matching original R behavior.
     maineffects=FALSE, interactions=FALSE, cubeplot=FALSE,
     contourplot=FALSE, residualplots=FALSE, paretoplot=FALSE, curvatureplot=FALSE,
-    optimizeresponse=FALSE, optimizationgoal="maximize", optimizationgoals=NULL, externalplots="no",
+    optimizeresponse=FALSE, optimizationgoal="maximize", optimizationgoals=NULL,
+    # ADDITIVE FEATURE: numeric target value(s) for OPTIMIZATIONGOAL=TARGET /
+    # OPTIMIZATIONGOALS containing "target" entries. Previously there was no
+    # way -- neither in the GUI (no input field existed) nor in hand-typed
+    # syntax (no keyword existed at all) -- to specify WHAT value "target"
+    # should aim for; do_optimization()/do_multi_response_optimization()
+    # always silently substituted mean(response) (single) or mean(range(response))
+    # (multi), regardless of what the user actually needed to hit. Both left
+    # NULL by default, which preserves that exact historical fallback
+    # behavior unchanged for anyone not using these new keywords.
+    optimizationtarget=NULL, optimizationtargets=NULL, externalplots="no",
     exporthtml=TRUE, htmlpath=NULL,
     effectstable=FALSE, residualtests=FALSE, viftable=FALSE, optdetailtable=FALSE,
     screeningcenterpts=FALSE, screeningcenterptscount=NULL, screeningsummary=FALSE,
@@ -406,6 +416,20 @@ optdesmc <- function(varnames=NULL, frml=NULL, factors="no",
         optimizationgoals_all <- rep(optimizationgoals_all, length.out=length(responsevars_all))
     multi_response       <- length(responsevars_all) > 1
     primary_responsevar  <- if (length(responsevars_all) >= 1) responsevars_all[1] else responsevar
+
+    # ── Numeric target value(s), parallel to optimizationgoal(s) above ───────
+    # single-response: OPTIMIZATIONTARGET (one float). multi-response:
+    # OPTIMIZATIONTARGETS (one float per response, same order as
+    # RESPONSEVAR/OPTIMIZATIONGOALS). Unspecified entries stay NA, which
+    # do_optimization()/do_multi_response_optimization() both treat as "fall
+    # back to the historical mean(response)/mean(range) behavior" -- so a run
+    # that never mentions these keywords is completely unaffected.
+    optimizationtarget_num  <- suppressWarnings(as.numeric(unlist(optimizationtarget)[1]))
+    optimizationtargets_all <- suppressWarnings(as.numeric(parse_multi_values(optimizationtargets)))
+    if (length(optimizationtargets_all) == 0 && length(responsevars_all) > 0)
+        optimizationtargets_all <- rep(optimizationtarget_num, length(responsevars_all))
+    if (length(responsevars_all) > 0 && length(optimizationtargets_all) < length(responsevars_all))
+        optimizationtargets_all <- rep(optimizationtargets_all, length.out=length(responsevars_all))
 
     # ── Power & Sample Size calculator (additive, OFF by default) ────────────
     # A pure planning tool: independent of GENERATEDESIGN, gated only on its
@@ -854,7 +878,8 @@ optdesmc <- function(varnames=NULL, frml=NULL, factors="no",
                                 do_multi_response_optimization(fits_list, resp_data, variables, spec,
                                                 optimizationgoals_all, warns, responsevars_all,
                                                 optdetailtable=optdetailtable,
-                                                contourplot=(contourplot || createplots))
+                                                contourplot=(contourplot || createplots),
+                                                targets=optimizationtargets_all)
                             }, error=function(e) {
                                 tryCatch(spsspkg.EndProcedure(), error=function(x) NULL)
                                 warns$warn(gtxtf("Multi-response optimizer error: %s", e$message), dostop=FALSE)
@@ -863,7 +888,8 @@ optdesmc <- function(varnames=NULL, frml=NULL, factors="no",
                         } else {
                             opt_plot_fn <- tryCatch(do_optimization(fit, resp_data, variables, spec,
                                                     optimizationgoal, warns, primary_responsevar,
-                                                    optdetailtable=optdetailtable),
+                                                    optdetailtable=optdetailtable,
+                                                    target=optimizationtarget_num),
                                      error=function(e) {
                                          tryCatch(spsspkg.EndProcedure(), error=function(x) NULL)
                                          warns$warn(gtxtf("Optimizer error: %s", e$message), dostop=FALSE)
@@ -3052,11 +3078,27 @@ create_all_plots <- function(fit, data, variables, designtype,
                     cols <- ifelse(tvals > tcrit, "#C0392B", "#5DADE2")
                     chart_title <- gtxt("Pareto Chart of Effects")
                     xlab_txt <- if (use_lenth) gtxt("Effect Magnitude") else gtxt("Standardized Effect (|t|)")
+                    # BUGFIX: xlim used to be sized from the bars alone
+                    # (max(tvals)*1.25), with no regard for where the
+                    # significance threshold line (tcrit) would be drawn.
+                    # Whenever tcrit exceeded every bar -- routine with
+                    # Lenth's PSE method on small/noisy designs, and exactly
+                    # the scenario Minitab's own chart is designed to show --
+                    # the dashed line and its value label landed at or past
+                    # the plot's right edge instead of cleanly inside it.
+                    # Including tcrit in the axis-max calculation guarantees
+                    # the line is always fully visible, matching Minitab's
+                    # actual behavior (the line always draws; Minitab's own
+                    # docs note it's omitted only in the unrelated
+                    # zero-standard-error case). Purely a display change --
+                    # bar heights, tcrit's value, and the significance
+                    # coloring above are all untouched.
+                    axis_max <- max(c(tvals, tcrit), na.rm=TRUE)
                     bp   <- barplot(tvals, horiz=TRUE, las=1, names.arg=bar_codes,
                                     col=cols, border="white", lwd=1.5,
                                     xlab=xlab_txt,
                                     main=chart_title,
-                                    xlim=c(0, max(tvals)*1.25),
+                                    xlim=c(0, axis_max*1.25),
                                     col.lab="#2C3E50", col.axis="#34495E", col.main="#2C3E50")
                     mtext(gtxtf("response is %s%s", resp, if (use_lenth) gtxt(" (Lenth's PSE method)") else gtxt(", alpha = 0.05")),
                           side=3, line=0.4, cex=0.85, col="#2C3E50")
@@ -3077,7 +3119,12 @@ create_all_plots <- function(fit, data, variables, designtype,
                     # right margin (xpd=TRUE lets it sit outside the plot
                     # region so it never overlaps the bars themselves).
                     par(xpd=TRUE)
-                    legend(x=max(tvals)*1.28, y=max(bp), legend=paste0(tc$legend$Letter, " = ", tc$legend$Name),
+                    # Anchored to the same axis_max used for xlim above (not
+                    # max(tvals) alone) so this key always sits just outside
+                    # the actual plot's right edge, even when the threshold
+                    # line pushed that edge further out than the bars alone
+                    # would have.
+                    legend(x=axis_max*1.28, y=max(bp), legend=paste0(tc$legend$Letter, " = ", tc$legend$Name),
                            bty="n", cex=0.78, title=gtxt("Factor"), text.col="#2C3E50",
                            title.col="#2C3E50", xjust=0, yjust=1)
                 })
@@ -3428,6 +3475,21 @@ create_external_plots <- function(fit, data, variables, designtype,
                     geom_hline(yintercept=tcrit, linetype="dashed", color="#C0392B", linewidth=1) +
                     annotate("text", x=Inf, y=tcrit, label=sprintf("%.3f", tcrit),
                              color="#C0392B", size=3.2, fontface="bold", vjust=-0.6, hjust=0.5) +
+                    # BUGFIX: geom_hline() does not itself expand the y-scale
+                    # to include its own yintercept (confirmed against
+                    # ggplot2's own reference docs: "They also do not affect
+                    # the x and y scales" -- geom_abline.html). Whenever tcrit
+                    # exceeds every bar's Effect value -- routine with Lenth's
+                    # PSE method on small/noisy designs -- the dashed
+                    # threshold line and its value label above could render
+                    # right at or past the panel's edge instead of cleanly
+                    # inside it, instead of the fully-visible line Minitab's
+                    # own Pareto Chart of Effects always draws. expand_limits()
+                    # guarantees tcrit is included in the trained range without
+                    # overriding ggplot2's own default padding/expansion for
+                    # the bars, so normal charts (tcrit already inside the
+                    # bars' range) are completely unaffected.
+                    expand_limits(y = tcrit) +
                     scale_fill_manual(values=c(setNames("#C0392B", gtxt("Significant")),
                                                 setNames("#5DADE2", gtxt("Not significant")))) +
                     labs(title=gtxt("Pareto Chart of Effects"),
@@ -3667,12 +3729,19 @@ create_varselect_plots <- function(vsel,
 # RESPONSE OPTIMIZER
 # ════════════════════════════════════════════════════════════════════════════
 
-do_optimization <- function(fit, data, variables, spec, goal, warns, responsevar=NULL, optdetailtable=FALSE) {
+do_optimization <- function(fit, data, variables, spec, goal, warns, responsevar=NULL, optdetailtable=FALSE, target=NA_real_) {
     resp      <- if (!is.null(responsevar) && responsevar %in% names(data)) responsevar else tail(names(data), 1)
     meta_cols <- c("Reps","Proportion","StdOrder","RunOrder","Block","CenterPt","PtType")
     var_names <- intersect(as.character(variables),
                            setdiff(names(data), c(meta_cols, resp)))
     if (length(var_names)==0) return(NULL)
+
+    # Resolved numeric target for goal=="target": use the caller-supplied
+    # `target` when it's a real, finite number; otherwise fall back to the
+    # original, pre-existing behavior (mean of the observed response) so
+    # every run that doesn't pass `target` is completely unaffected.
+    target_resolved <- if (!is.null(target) && length(target) > 0 && is.finite(target[1]))
+        as.numeric(target[1]) else mean(data[[resp]], na.rm=TRUE)
     # Deferred-plot closure: NULL unless the optimizer succeeds below, in
     # which case it's set to a zero-arg function the CALLER can invoke later
     # (see comment further down) to draw the optimization plot in its own
@@ -3716,8 +3785,7 @@ do_optimization <- function(fit, data, variables, spec, goal, warns, responsevar
         if (is.na(pred)) return(1e10)
         if (goal=="maximize") return(-pred)
         if (goal=="minimize") return( pred)
-        target <- mean(data[[resp]], na.rm=TRUE)
-        return(abs(pred - target))
+        return(abs(pred - target_resolved))
     }
 
     # Use desirability if available for desirability score display
@@ -3725,10 +3793,20 @@ do_optimization <- function(fit, data, variables, spec, goal, warns, responsevar
     if (requireNamespace("desirability", quietly=TRUE)) {
         library(desirability)
         yr    <- range(data[[resp]], na.rm=TRUE)
+        # dTarget(low, target, high) requires low <= target <= high. A
+        # caller-supplied target can legitimately fall outside the observed
+        # response range (extrapolating beyond what's been measured is often
+        # the whole point of specifying one) -- widen the bounds to include it
+        # instead of letting dTarget() error. When target_resolved is the
+        # historical mean(yr) fallback, it's always inside [yr[1],yr[2]]
+        # already, so dt_lo/dt_hi collapse to plain yr[1]/yr[2] and nothing
+        # changes for existing runs.
+        dt_lo <- min(yr[1], target_resolved)
+        dt_hi <- max(yr[2], target_resolved)
         d_fn  <- switch(goal,
             "maximize" = dMax(yr[1], yr[2]),
             "minimize" = dMin(yr[1], yr[2]),
-            "target"   = dTarget(yr[1], mean(yr), yr[2]))
+            "target"   = dTarget(dt_lo, target_resolved, dt_hi))
         # Multi-start: grid search
         gn    <- 4
         grid  <- as.matrix(expand.grid(lapply(seq_along(var_names), function(i)
@@ -3775,9 +3853,19 @@ do_optimization <- function(fit, data, variables, spec, goal, warns, responsevar
                                   round(max(data[[resp]],na.rm=TRUE),4), NA),
             check.names=FALSE
         )
+        # BUGFIX/enhancement: when goal=="target", show what value was
+        # actually targeted -- previously this was computed silently
+        # (always mean(response)) with no indication anywhere in the output
+        # of what the optimizer aimed for, making a "target" run
+        # indistinguishable from any other goal in the report.
+        opt_caption <- if (identical(goal, "target"))
+            gtxtf("Optimal settings found by L-BFGS-B with multi-start grid search. Target value: %s",
+                  format(target_resolved, digits=6))
+        else
+            gtxt("Optimal settings found by L-BFGS-B with multi-start grid search")
         spsspivottable.Display(result_df,
             title  = gtxtf("Response Optimizer — Goal: %s", toupper(goal)),
-            caption= gtxt("Optimal settings found by L-BFGS-B with multi-start grid search"),
+            caption= opt_caption,
             templateName="DOEOPTIMIZE", outline=gtxt("Optimizer"))
 
         # Sensitivity table: response at ±10% of optimal
@@ -3949,10 +4037,22 @@ do_optimization <- function(fit, data, variables, spec, goal, warns, responsevar
 # hand-rolled linear 0-1 normalization if that package is unavailable, so the
 # feature works either way.
 do_multi_response_optimization <- function(fits, data, variables, spec, goals, warns, responsevars,
-                                             optdetailtable=FALSE, contourplot=FALSE) {
+                                             optdetailtable=FALSE, contourplot=FALSE, targets=NULL) {
     meta_cols <- c("Reps","Proportion","StdOrder","RunOrder","Block","CenterPt","PtType")
     var_names <- intersect(as.character(variables), setdiff(names(data), c(meta_cols, responsevars)))
     if (length(var_names) == 0) return(NULL)
+
+    # Per-response resolved numeric target, parallel to `goals`, built BEFORE
+    # the `valid` filter below (so its positions still line up 1:1 with the
+    # original, unfiltered `responsevars`/`goals`), then subset by the same
+    # `valid` mask alongside them. `targets` may be NULL or shorter than
+    # `responsevars` -- recycled/padded defensively so indexing by position
+    # can never go out of bounds. NA entries (unspecified) are resolved to
+    # the historical mean(range()) fallback below, at each of the two places
+    # "target" is used, so a caller that never passes `targets` is completely
+    # unaffected.
+    targets_all <- if (is.null(targets)) rep(NA_real_, length(responsevars))
+        else suppressWarnings(as.numeric(rep(targets, length.out=length(responsevars))))
 
     valid <- !sapply(fits, is.null)
     if (!any(valid)) {
@@ -3962,6 +4062,7 @@ do_multi_response_optimization <- function(fits, data, variables, spec, goals, w
     fits         <- fits[valid]
     responsevars <- responsevars[valid]
     goals        <- goals[valid]
+    targets_resolved <- targets_all[valid]
 
     # BUGFIX: same device/cwd defensive guard as do_optimization() above --
     # see that function's comment. Without it, this function's own
@@ -3993,10 +4094,16 @@ do_multi_response_optimization <- function(fits, data, variables, spec, goals, w
         for (k in seq_along(responsevars)) {
             rv <- responsevars[k]; g <- goals[k]
             yr <- range(data[[rv]], na.rm=TRUE)
+            # Per-response resolved target: caller-supplied value at position
+            # k when finite, else the historical mean(yr) fallback -- and the
+            # dTarget() bounds are widened to include it if it falls outside
+            # the observed range, same reasoning as do_optimization() above.
+            tgt_k <- if (is.finite(targets_resolved[k])) targets_resolved[k] else mean(yr)
+            dt_lo_k <- min(yr[1], tgt_k); dt_hi_k <- max(yr[2], tgt_k)
             d_fns[[rv]] <- switch(g,
                 "maximize" = dMax(yr[1], yr[2]),
                 "minimize" = dMin(yr[1], yr[2]),
-                "target"   = dTarget(yr[1], mean(yr), yr[2]),
+                "target"   = dTarget(dt_lo_k, tgt_k, dt_hi_k),
                 dMax(yr[1], yr[2]))
         }
     }
@@ -4023,7 +4130,10 @@ do_multi_response_optimization <- function(fits, data, variables, spec, goals, w
                 if (!is.finite(span) || span <= 0) return(1)
                 norm <- (preds[k] - yr[1]) / span
                 if (g == "minimize") norm <- 1 - norm
-                if (g == "target")   norm <- 1 - abs(preds[k] - mean(yr)) / (span / 2)
+                if (g == "target") {
+                    tgt_k <- if (is.finite(targets_resolved[k])) targets_resolved[k] else mean(yr)
+                    norm  <- 1 - abs(preds[k] - tgt_k) / (span / 2)
+                }
                 min(max(norm, 1e-6), 1)
             })
         }
@@ -4077,9 +4187,19 @@ do_multi_response_optimization <- function(fits, data, variables, spec, goals, w
         caption= gtxt("Joint optimum found by maximizing composite desirability (geometric mean of per-response desirabilities) via L-BFGS-B with multi-start grid search."),
         templateName="DOEMOPTFACTORS", outline=gtxt("Multi-Response Optimizer"))
 
+    # BUGFIX/enhancement: show what value each "target"-goal response was
+    # actually targeted at -- previously silent (always mean(range())), with
+    # no way to tell from the output. Blank for maximize/minimize responses.
+    target_col <- sapply(seq_along(responsevars), function(k) {
+        if (!identical(goals[k], "target")) return(NA_character_)
+        yr    <- range(data[[responsevars[k]]], na.rm=TRUE)
+        tgt_k <- if (is.finite(targets_resolved[k])) targets_resolved[k] else mean(yr)
+        format(round(tgt_k, 4))
+    })
     resp_df <- data.frame(
         Response          = c(responsevars, gtxt("Composite")),
         Goal               = c(goals, ""),
+        Target             = c(target_col, NA),
         `Predicted Value`  = c(round(preds, 4), NA),
         Desirability       = c(if (has_desir) round(per_d, 4) else rep(gtxt("N/A (approx.)"), length(per_d)),
                                 round(composite_d, 4)),
@@ -4847,11 +4967,24 @@ export_html_report <- function(fit, data, variables, designtype, warns,
                     name=gtxt("Effect"),
                     marker=list(color=ifelse(sig, "#C0392B", "#5DADE2")),
                     text=enames, hovertemplate=paste0("%{text}<br>", gtxt("Effect"), ": %{x:.4f}<extra></extra>"))
+                # BUGFIX: Plotly's default autorange sizes the x-axis from the
+                # bar trace alone -- a `shapes` line (the dashed threshold
+                # below) isn't included in that calculation, so whenever
+                # tcrit exceeded every bar (routine with Lenth's PSE method on
+                # small/noisy designs) the line itself could render outside
+                # the visible plot area even though its label (in the title
+                # above) was still shown. Setting an explicit range that
+                # always includes tcrit guarantees the line itself is visible
+                # too, matching Minitab's own chart. Purely a display change;
+                # normal charts (tcrit already inside the bars' range) get
+                # essentially the same range Plotly's autorange would have
+                # picked anyway.
+                pareto_axis_max <- max(c(aeff, tcrit), na.rm=TRUE) * 1.1
                 p_pareto <- plotly::layout(p_pareto,
                     title=ptitle(gtxtf("Pareto Chart of Effects (response is %s%s)<br><sup>%s</sup>", resp,
                         if (use_lenth) gtxt(", Lenth's PSE method") else gtxt(", alpha = 0.05"), thresh_label)),
                     yaxis=list(title="", automargin=TRUE, autorange="reversed"),
-                    xaxis=list(title=ylab_txt, automargin=TRUE),
+                    xaxis=list(title=ylab_txt, automargin=TRUE, range=c(0, pareto_axis_max)),
                     shapes=list(list(type="line", yref="paper", y0=0, y1=1, x0=tcrit, x1=tcrit,
                                       line=list(color="#C0392B", dash="dash", width=2))),
                     annotations=list(
@@ -6097,6 +6230,14 @@ Run <- function(args) {
         # existing single-response syntax is completely unaffected.
         spsspkg.Template("OPTIMIZATIONGOALS", subc="", ktype="str", var="optimizationgoals", islist=TRUE,
             vallist=list("maximize","minimize","target")),
+        # ADDITIVE: numeric target value(s), see optdesmc()'s own comment on
+        # optimizationtarget/optimizationtargets for the full rationale.
+        # Singular pairs with OPTIMIZATIONGOAL (single-response); plural
+        # pairs with OPTIMIZATIONGOALS (multi-response), same space-separated
+        # ordering convention as every other paired singular/plural keyword
+        # in this file (RESPONSEVAR/OPTIMIZATIONGOALS, POWEREFFECTSIZES, etc).
+        spsspkg.Template("OPTIMIZATIONTARGET",  subc="", ktype="float", var="optimizationtarget"),
+        spsspkg.Template("OPTIMIZATIONTARGETS", subc="", ktype="float", var="optimizationtargets", islist=TRUE),
         spsspkg.Template("CRITERION",    subc="OPTIONS", ktype="str",  var="criterion"),
         spsspkg.Template("NUMCAND",      subc="OPTIONS", ktype="int",  var="ncand",       vallist=list(2)),
         spsspkg.Template("CENTER",       subc="OPTIONS", ktype="bool", var="center"),
