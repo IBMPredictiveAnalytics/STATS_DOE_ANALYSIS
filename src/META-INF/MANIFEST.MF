@@ -9,9 +9,9 @@ Description: This procedure generates experimental designs (optimal, f
  actorial,Plackett-Burman, response surface, Box-Behnken, CCD, Taguchi
  , and LatinHypercube) and optionally analyzes collected response data
   from them.
-Author: JKP, IBM SPSS
-Version: 2.13.28
-Product-Version: 18
+Author: JKP, Aruna Saraswathy IBM SPSS
+Version: 3.0.0
+Product-Version: 24
 Date: 29-jun-2026
 Categories: experimental design
 Plugins: R
