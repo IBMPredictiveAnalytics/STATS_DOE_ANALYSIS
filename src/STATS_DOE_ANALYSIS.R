@@ -1,4 +1,34 @@
 # ══════════════════════════════════════════════════════════════════════════════
+# STATS DOE ANALYSIS 2.15.1 (23-sep-2026)
+#  * Fixes: radio-button groups on the Model and Mixture/Taguchi dialogs were
+#    not drawn; PtType column dropped from generated mixture designs; mixture
+#    auto-detection too strict for rounded amounts; validation errors shown 3x.
+# STATS DOE ANALYSIS 2.15.0 (23-sep-2026)
+#  * Term selection (backward/forward/stepwise), Box-Cox, general full
+#    factorial with Tukey grouping, canonical analysis, 3-D surfaces,
+#    overlaid contours, confirmation-run intervals, robustness simulation,
+#    mixture designs (simplex-lattice/centroid generation, Scheffe models,
+#    trace and ternary plots, blend optimizer), Taguchi S/N analysis.
+#  * Fixes: TERMS without a "response:" prefix was ignored (default model used);
+#    mixture/factor variables without LOWS/HIGHS crashed validation.
+# STATS DOE ANALYSIS 2.14.0 (23-sep-2026)
+#  * New coded-factor analysis engine (default; /FITMODEL ANALYSISMODEL=CODED):
+#    -1/+1 coding incl. text factors, center-point curvature term, user model
+#    TERMS (per response), alias removal + alias table, adjusted-SS ANOVA with
+#    lack-of-fit/pure error, coded coefficients with effects and VIF, model
+#    summary incl. predicted R-squared, natural-unit equations, unusual
+#    observations, hierarchical backward elimination, fitted-means main-effect/
+#    interaction/cube plots, Pareto/normal plots of standardized effects with
+#    ALPHA-based reference line, contour and residual plots, HTML report.
+#  * Multi-response desirability optimizer with lower/target/upper limits,
+#    weights, importance, HOLD, several solutions, CI/PI at the optimum.
+#  * Fixes: two-level designs were analysed with a saturated raw-unit model
+#    (no error df, no t/p); fixed alpha 0.05 on the Pareto; raw-mean effect
+#    plots joined center points; optimizer failed with text factors; VARNAMES
+#    box disabled (and all columns used as factors) in analysis-only mode;
+#    constraint-file and formula validations fired when not applicable.
+# ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
 # WINDOWS TEMP DIR FIX
 # ══════════════════════════════════════════════════════════════════════════════
 # Restricted corporate Windows accounts sometimes have an unwritable default
@@ -172,7 +202,7 @@ parse_multi_values <- function(x) {
 # GLOBAL PACKAGE AVAILABILITY FLAGS
 # ══════════════════════════════════════════════════════════════════════════════
 # Define at top level so all functions can access them without parameter passing
-has_FrF2         <- requireNamespace("FrF2",         quietly=TRUE)
+has_FrF2         <- suppressMessages(requireNamespace("FrF2", quietly=TRUE))   # silences the DoE.base "S3 method overwritten" load note
 has_rsm          <- requireNamespace("rsm",          quietly=TRUE)
 has_desirability <- requireNamespace("desirability", quietly=TRUE)
 has_BsMD         <- requireNamespace("BsMD",         quietly=TRUE)
@@ -272,7 +302,18 @@ optdesmc <- function(varnames=NULL, frml=NULL, factors="no",
     powertable=FALSE, powereffectsizes=NULL, powerruns=NULL, poweralpha=0.05, powertarget=0.8,
     augmenttoccd=FALSE, augmentcenterpts=NULL,
     varselect=FALSE, varselmethod="stepwise", stepdir="both",
-    selectiontrace=FALSE, fitprofile=FALSE, parsimonyplot=FALSE, factormap=FALSE) {
+    selectiontrace=FALSE, fitprofile=FALSE, parsimonyplot=FALSE, factormap=FALSE,
+    # Coded-factor analysis engine (see "CODED-FACTOR ANALYSIS ENGINE")
+    analysismodel="coded", terms=NULL, alpha=0.05, backward=FALSE, alpharemove=0.10,
+    centerterm=TRUE, conflevel=95, lowlevels=NULL, equation=TRUE, aliastable=TRUE,
+    diagtable=TRUE, factorinfo=TRUE, effectsplot=FALSE,
+    optlowers=NULL, optuppers=NULL, optweights=NULL, optimportance=NULL, opthold=NULL,
+    optsolutions=1,
+    selection="none", alphaenter=0.15, boxcox="none", lambda=NULL, categorical=NULL,
+    grouping=FALSE, surfaceplot=FALSE, overlay=FALSE, canonical=FALSE,
+    robust=FALSE, robustsd=5, confirmruns=NULL,
+    mixmodel="quadratic", mixcomps="auto", traceplot=FALSE, sntype=NULL,
+    latticedegree=2, augmentmix=FALSE, interpret=TRUE, predict=NULL) {
 
     setuplocalization("STATS_DOE_ANALYSIS")
 
@@ -396,6 +437,28 @@ optdesmc <- function(varnames=NULL, frml=NULL, factors="no",
     screeningcenterpts   <- to_bool(screeningcenterpts)
     screeningsummary     <- to_bool(screeningsummary)
     powertable           <- to_bool(powertable)
+    backward             <- to_bool(backward)
+    centerterm           <- if (is.null(centerterm)) TRUE else to_bool(centerterm)
+    equation             <- to_bool(equation)
+    aliastable           <- to_bool(aliastable)
+    diagtable            <- to_bool(diagtable)
+    factorinfo           <- to_bool(factorinfo)
+    effectsplot          <- to_bool(effectsplot)
+    grouping             <- to_bool(grouping)
+    surfaceplot          <- to_bool(surfaceplot)
+    overlay              <- to_bool(overlay)
+    canonical            <- to_bool(canonical)
+    robust               <- to_bool(robust)
+    traceplot            <- to_bool(traceplot)
+    augmentmix           <- to_bool(augmentmix)
+    designtype           <- tolower(as.character(unlist(designtype)[1]))
+    designtype           <- switch(designtype, designtype_slattice="simplexlattice", designtype_scentroid="simplexcentroid", designtype)
+    analysismodel        <- tolower(trimws(as.character(unlist(analysismodel)[1])))
+    analysismodel        <- switch(analysismodel, "item_am_a"="coded", "item_am_b"="legacy", analysismodel)
+    if (!analysismodel %in% c("coded","legacy")) {
+        warns$warn(gtxtf("ANALYSISMODEL=%s is not recognized; CODED used.", analysismodel), dostop=FALSE)
+        analysismodel <- "coded"
+    }
     if (!is.null(screeningcenterptscount)) screeningcenterptscount <- suppressWarnings(as.integer(unlist(screeningcenterptscount)[1]))
     if (!is.null(screeningcenterptscount) && (is.na(screeningcenterptscount) || screeningcenterptscount < 1)) screeningcenterptscount <- NULL
     if (!is.null(htmlpath)) htmlpath <- unlist(htmlpath)[1]
@@ -460,6 +523,11 @@ optdesmc <- function(varnames=NULL, frml=NULL, factors="no",
     if (is.list(factors))  factors  <- fixtype(factors,  warns)
     if (is.list(mixtures)) mixtures <- fixtype(mixtures, warns)
     
+    # Simplex (mixture) designs: every VARNAMES entry is a mixture component
+    if (designtype %in% c("simplexlattice","simplexcentroid") && !is.null(varnames) &&
+        !any(coerce_yesno(mixtures)))
+        mixtures <- as.list(rep("yes", length(unlist(varnames))))
+
     # CRITICAL FIX: Properly coerce yes/no strings to logical
     factors  <- coerce_yesno(factors)
     mixtures <- coerce_yesno(mixtures)
@@ -510,6 +578,7 @@ optdesmc <- function(varnames=NULL, frml=NULL, factors="no",
     }
     
     read_existing <- !generatedesign
+    factor_source <- "given"
 
     # BUGFIX: Output Dataset (SAVE DATASET=...) is mandatory whenever a new
     # design is being generated (GENERATEDESIGN=YES), but optional when
@@ -585,7 +654,7 @@ optdesmc <- function(varnames=NULL, frml=NULL, factors="no",
     # ════════════════════════════════════════════════════════════════════════
     
     if (read_existing) {
-        # Read from active dataset for analysis (Minitab-style)
+        # Read from active dataset for analysis (conventional)
         tryCatch({
             # Read all data from the active dataset
             existing_data <- spssdata.GetDataFromSPSS()
@@ -606,11 +675,16 @@ optdesmc <- function(varnames=NULL, frml=NULL, factors="no",
             all_cols <- names(existing_data)
             factor_cols <- setdiff(all_cols, c(meta_cols, responsevars_all))
             
-            # If varnames not specified, use factor columns from dataset
-            if (is.null(varnames) || length(varnames) == 0) {
-                variables <- factor_cols
+            # If VARNAMES is not given: use the design information saved in
+            # the dataset (DOE_Factors attribute) or, failing that, detect the
+            # factors (columns with a few distinct settings).
+            if (is.null(varnames) || length(unlist(varnames)) == 0) {
+                fr <- .doe_resolve_factors(existing_data, responsevars_all)
+                variables <- fr$factors; factor_source <- fr$source
+                if (!length(variables))
+                    warns$warn(gtxt("VARNAMES was not given and no factor columns could be found (a factor has 2 to 7 distinct settings). Name the factors with VARNAMES."), dostop=TRUE)
             } else {
-                variables <- varnames
+                variables <- varnames; factor_source <- "given"
             }
             
             # Create a minimal res structure for analysis
@@ -618,6 +692,7 @@ optdesmc <- function(varnames=NULL, frml=NULL, factors="no",
         }, error=function(e) {
             warns$warn(gtxtf("Could not read from active dataset: %s", e$message), dostop=TRUE)
         })
+        if (!identical(factor_source, "given") && isTRUE(analyze)) .doe_show_factors(existing_data, variables, factor_source)
     } else {
         # Generate new design
         res <- switch(designtype,
@@ -637,6 +712,8 @@ optdesmc <- function(varnames=NULL, frml=NULL, factors="no",
         "ccd"            = generate_ccd(spec, variables, replicates, warns),
         "rsm"            = generate_ccd(spec, variables, replicates, warns),
         "taguchi"        = generate_taguchi(spec, variables, factors, warns),
+        "simplexlattice" = generate_simplex(spec, variables, "lattice", latticedegree, augmentmix, mixturesum, warns),
+        "simplexcentroid"= generate_simplex(spec, variables, "centroid", latticedegree, augmentmix, mixturesum, warns),
         "lhs"            = generate_lhs(spec, variables, ntrials, warns),
         "dsd"            = generate_dsd(spec, variables, warns),
         "fullfactorial"  = generate_full_factorial(spec, variables, warns),
@@ -665,7 +742,7 @@ optdesmc <- function(varnames=NULL, frml=NULL, factors="no",
         # silently discarding FrF2's confounding-aware blocking before the
         # later, less-precise round-robin fallback re-added a different
         # Block column in its place.
-        expected_cols <- c(as.character(variables), "Reps", "Proportion", "Block")
+        expected_cols <- c(as.character(variables), "Reps", "Proportion", "Block", "PtType")
         extra_cols    <- setdiff(names(res$design), expected_cols)
         if (length(extra_cols) > 0) {
             warns$warn(gtxtf(
@@ -790,7 +867,8 @@ optdesmc <- function(varnames=NULL, frml=NULL, factors="no",
         # points correctly on its own).
         if (!is.null(replicates) && replicates > 1 &&
             designtype %in% c("optimal","lhs","taguchi",
-                               "plackettburman","dsd","fullfactorial")) {
+                               "plackettburman","dsd","fullfactorial",
+                               "simplexlattice","simplexcentroid")) {
             res$design           <- do.call(rbind, replicate(replicates, res$design, simplify=FALSE))
             res$design$RunOrder  <- seq_len(nrow(res$design))
             rownames(res$design) <- NULL
@@ -840,7 +918,58 @@ optdesmc <- function(varnames=NULL, frml=NULL, factors="no",
                 }
             }
 
-            if (!is.null(resp_data)) {
+            # Coded-factor engine: used for every design except mixtures and
+            # Taguchi arrays, unless ANALYSISMODEL=LEGACY is requested.
+            use_coded <- identical(analysismodel, "coded")
+            if (!is.null(resp_data) && use_coded) {
+                if (is.null(variables) || length(unlist(variables)) == 0)
+                    warns$warn(gtxt("VARNAMES must list the design factors to analyze (all other columns are otherwise ambiguous)."), dostop=TRUE)
+                # mixture data: flagged components, simplex design types, or
+                # (auto) every factor numeric, non-negative and summing to the
+                # same total in every run
+                mixflags <- rep(unlist(mixtures) %in% TRUE, length.out=length(unlist(variables)))
+                is_mix <- any(mixflags) || designtype %in% c("simplexlattice","simplexcentroid")
+                if (!is_mix && length(unlist(variables)) >= 2 && is.null(terms)) {
+                    vv <- intersect(tolower(unlist(variables)), tolower(names(resp_data)))
+                    cols <- names(resp_data)[match(vv, tolower(names(resp_data)))]
+                    if (length(cols) >= 2 && all(vapply(resp_data[cols], is.numeric, logical(1)))) {
+                        A <- as.matrix(resp_data[, cols, drop=FALSE]); tot <- rowSums(A)
+                        if (nrow(A) >= 3 && all(A >= 0, na.rm=TRUE) && all(is.finite(tot)) && mean(tot) > 0 &&
+                            sd(tot) / mean(tot) < 1e-4 && length(unique(round(A[, 1], 9))) > 1) {
+                            is_mix <- TRUE
+                            warns$warn(gtxt("The factors sum to the same total in every run, so they were analyzed as mixture components. To analyze them as ordinary factors instead, specify the model with TERMS (or use ANALYSISMODEL=LEGACY)."), dostop=FALSE)
+                        }
+                    }
+                }
+                snv <- tolower(as.character(unlist(sntype))[1])
+                is_tag <- designtype == "taguchi" || (!is.null(sntype) && !is.na(snv) && nzchar(snv) && !snv %in% c("none","item_sn_e"))
+                if (!is.null(sntype) && !is.na(snv) && snv %in% c("none","item_sn_e")) sntype <- NULL
+                fa_opts <- list(
+                    mixture=is_mix, mixflags=if (any(mixflags)) mixflags else NULL, mixturesum=mixturesum,
+                    mixmodel=mixmodel, mixcomps=mixcomps, traceplot=traceplot,
+                    taguchi=is_tag, sntype=sntype, createplots=createplots,
+                    selection=selection, alphaenter=alphaenter, boxcox=boxcox, lambda=lambda,
+                    categorical=categorical, designmodel=if (!read_existing) model else NULL, grouping=grouping, surfaceplot=surfaceplot,
+                    overlay=overlay, canonical=canonical, robust=robust, robustsd=robustsd, confirmruns=confirmruns,
+                    tables=analyze, terms=terms, alpha=alpha, backward=backward, alpharemove=alpharemove,
+                    centerterm=centerterm, conflevel=conflevel, lowlevels=lowlevels,
+                    lows=if (!is.null(spec)) spec[, 2] else lows,
+                    highs=if (!is.null(spec)) spec[, 3] else highs,
+                    equation=equation, alias=aliastable, diagnostics=diagtable, factorinfo=factorinfo,
+                    pareto=paretoplot, effectsplot=effectsplot, maineffects=maineffects,
+                    interactions=interactions, cubeplot=cubeplot, contourplot=contourplot,
+                    residualplots=residualplots,
+                    optimize=optimizeresponse, goals=optimizationgoals_all,
+                    lowers=optlowers,
+                    targets=if (multi_response) optimizationtargets_all else optimizationtarget_num,
+                    uppers=optuppers, weights=optweights, importance=optimportance,
+                    holds=opthold, nsolutions=optsolutions,
+                    interpret=interpret, predict=predict,
+                    html=exporthtml,
+                    htmlpath=if (!is.null(htmlpath) && nzchar(htmlpath)) htmlpath
+                             else make_default_html_path("Analysis", primary_responsevar))
+                fa_run_analysis(resp_data, variables, responsevars_all, designtype, warns, fa_opts)
+            } else if (!is.null(resp_data)) {
                 fit <- fit_model(resp_data, variables, designtype, model, warns, primary_responsevar)
                 if (!is.null(fit)) {
                     if (analyze)
@@ -990,10 +1119,16 @@ optdesmc <- function(varnames=NULL, frml=NULL, factors="no",
     # ── Save dataset ──────────────────────────────────────────────────────────
     # Safety net: ensure no procedure is open before creating dataset
     tryCatch(spsspkg.EndProcedure(), error=function(e) NULL)
+
+    # Analysis of an existing dataset: remember the factor list in the dataset
+    # (data file attribute DOE_Factors) when the user named the factors, so the
+    # next analysis of the same data can leave VARNAMES blank.
+    if (read_existing && isTRUE(analyze) && identical(factor_source, "given") && length(variables))
+        .doe_store_factors(as.character(unlist(variables)), warns)
     
     # Save dataset (only for new designs, not when reading existing)
     if (!read_existing) {
-        gendataset(res, outputdataset, variables, factorlist, warns)
+        gendataset(res, outputdataset, variables, factorlist, warns, designtype=designtype)
     }
     
     warns$display(inproc=FALSE)
@@ -1060,7 +1195,11 @@ generate_optimal <- function(spec, variables, frml, ntrials, designalg,
                  # It means the candidate set couldn't support a non-singular
                  # fit for this model -- give the user concrete next steps
                  # instead of a bare LAPACK message.
-                 if (grepl("computationally singular|reciprocal condition number", e$message)) {
+                 if (grepl("exactly singular|Singular design", e$message)) {
+                     warns$warn(gtxtf(
+                         "Optimal design generation failed because the model cannot be estimated from the candidate points (%s). Usually a squared or higher term has too few LEVELS (use 3 or more for that variable), or TRIALS is smaller than the number of model terms.",
+                         e$message), dostop=TRUE)
+                 } else if (grepl("computationally singular|reciprocal condition number", e$message)) {
                      warns$warn(gtxtf(
                          "Optimal design generation failed: the candidate set was too close to singular to invert for this CRITERION/model combination (%s). This is most common with CRITERION=A or CRITERION=I on a higher-order (quad/cubic) model with DESIGNALG=APPROX and CENTER=NO. Try CENTER=YES, a larger NUMCAND, more REPEATS, or CRITERION=D (which does not require a full matrix inverse and is more numerically robust).",
                          e$message), dostop=TRUE)
@@ -1288,8 +1427,14 @@ generate_full_factorial <- function(spec, variables, warns) {
 
 generate_pb_FrF2 <- function(spec, variables, ntrials, warns) {
     nvars <- length(variables)
-    if (is.null(ntrials)) ntrials <- ceiling((nvars+1)/4)*4
-    design <- tryCatch(pb(nruns=ntrials, nfactors=nvars),
+    # Default run size: smallest multiple of 4 above the factor count, but at
+    # least 12 -- the 8-run Plackett-Burman is just a regular 2^(k-p) fraction
+    # (Minitab's PB catalog also starts at 12 runs). An explicit NTRIALS is kept.
+    if (is.null(ntrials)) ntrials <- max(12, ceiling((nvars+1)/4)*4)
+    design <- tryCatch(withCallingHandlers(pb(nruns=ntrials, nfactors=nvars),
+                           warning=function(w) {
+                               warns$warn(gsub("\\s+", " ", conditionMessage(w)), dostop=FALSE)
+                               invokeRestart("muffleWarning") }),
                        error=function(e) warns$warn(e$message, dostop=TRUE))
     df <- as.data.frame(design)
     for (i in seq_along(variables)) {
@@ -1615,6 +1760,19 @@ compute_alias_structure <- function(res, designtype, warns) {
             chain_txt <- if (length(chains) > 0)
                 sapply(chains, function(ch) paste(ch, collapse=" = "))
             else character(0)
+            if (is.na(resolution) && length(chains) > 0) {
+                # shortest word = smallest symmetric difference between the
+                # factor sets of two effects in the same alias chain
+                wl <- unlist(lapply(chains, function(ch) {
+                    sets <- lapply(gsub("^-", "", ch), function(t) strsplit(t, ":", fixed=TRUE)[[1]])
+                    if (length(sets) < 2) return(integer(0))
+                    pr <- utils::combn(length(sets), 2)
+                    apply(pr, 2, function(ij) length(union(setdiff(sets[[ij[1]]], sets[[ij[2]]]),
+                                                           setdiff(sets[[ij[2]]], sets[[ij[1]]]))))
+                }))
+                wl <- wl[wl >= 1]
+                if (length(wl)) resolution <- as.character(as.roman(min(wl)))
+            }
             list(type="full", resolution=resolution, chains=chain_txt, matrix=NULL,
                  note=if (length(chain_txt)==0)
                      gtxt("No aliasing detected among the effects in this design (each effect is independently estimable).")
@@ -1649,7 +1807,7 @@ compute_alias_structure <- function(res, designtype, warns) {
                 # correlations here, so this check cannot misfire on a design
                 # that actually has something to report.
                 if (all(abs(cm) < 1e-8)) {
-                    list(type="full", resolution=resolution, chains=character(0), matrix=NULL,
+                    list(type="full", resolution=if (is.na(resolution)) "Full" else resolution, chains=character(0), matrix=NULL,
                          note=gtxt("This design uses the complete (unfractionated) set of factor-level combinations: all main effects and interactions are independently estimable. No aliasing or confounding exists."))
                 } else {
                     # Distinguish the genuine PB/non-regular case from the
@@ -1889,7 +2047,7 @@ augment_to_ccd <- function(varnames, responsevar, outputdataset, augmentcenterpt
     if ("RunOrder" %in% names(combined)) combined$RunOrder <- seq_len(nrow(combined))
 
     tryCatch(spsspkg.EndProcedure(), error=function(e) NULL)
-    gendataset(list(design=combined), outputdataset, variables, NULL, warns)
+    gendataset(list(design=combined), outputdataset, variables, NULL, warns, designtype="ccd")
 
     StartProcedure(gtxt("Design of Experiments"), "STATSOPTDESIGN")
     lbls <- c(gtxt("Original (Cube) Runs Kept"), gtxt("Axial (Star) Runs Added"),
@@ -2271,7 +2429,7 @@ display_analysis <- function(fit, data, variables, warns, responsevar=NULL,
 
     # ── Predicted R-squared via PRESS (leave-one-out) ─────────────────────────
     # PRESS = sum((e_i / (1 - h_ii))^2), Pred R^2 = 1 - PRESS/SST
-    # Standard in Minitab/JMP/Montgomery for assessing predictive ability and
+    # Standard in standard DOE texts (Montgomery) for assessing predictive ability and
     # detecting overfitting (Pred R^2 much lower than R^2 signals overfit model).
     pred_r2 <- NA
     press   <- NA
@@ -2459,7 +2617,7 @@ display_analysis <- function(fit, data, variables, warns, responsevar=NULL,
 # ════════════════════════════════════════════════════════════════════════════
 
 # compute_variable_selection ─────────────────────────────────────────────────
-# Minitab-style variable selection on a fitted lm model.
+# conventional variable selection on a fitted lm model.
 # Two methods:
 #   "stepwise"    — AIC-based step() from base R; no extra package required.
 #                   Returns a step-by-step table (Step, Action, Term, AIC)
@@ -2497,13 +2655,21 @@ compute_variable_selection <- function(fit, varselmethod="stepwise", stepdir="bo
         if (!direction %in% c("both","forward","backward")) direction <- "both"
         result <- tryCatch({
             # step() trace=0 suppresses per-iteration console output
-            step_fit <- step(fit, direction=direction, trace=0)
+            step_fit <- if (direction == "forward") {
+                # Forward selection has to start from the intercept-only model
+                # and add terms up to the full model; starting from the full
+                # model (as before) leaves nothing to add, so it stopped at step 1.
+                mf <- fit$model
+                f0 <- as.formula(paste(deparse(formula(fit)[[2]]), "~ 1"))
+                fit0 <- do.call("lm", list(formula=f0, data=mf))
+                step(fit0, scope=list(lower=~1, upper=formula(fit)), direction="forward", trace=0)
+            } else step(fit, direction=direction, trace=0)
             anova_steps <- step_fit$anova   # data.frame produced by step()
             if (!is.null(anova_steps) && nrow(anova_steps) > 0) {
                 df <- data.frame(
                     Step   = seq_len(nrow(anova_steps)),
-                    Action = gsub("^\\s+|\\s+$", "", rownames(anova_steps)),
-                    Df     = round(anova_steps[["Df"]], 0),
+                    Action = { a <- gsub("^\\s+|\\s+$", "", as.character(anova_steps[["Step"]])); a[!nzchar(a)] <- gtxt("start model"); a },
+                    Df     = abs(round(anova_steps[["Df"]], 0)),
                     AIC    = round(anova_steps[["AIC"]], 3),
                     stringsAsFactors = FALSE
                 )
@@ -2512,7 +2678,7 @@ compute_variable_selection <- function(fit, varselmethod="stepwise", stepdir="bo
                                  Df=integer(0), AIC=numeric(0))
             }
             list(type="stepwise", df=df,
-                 final_formula=deparse(formula(step_fit)),
+                 final_formula=gsub("\\s+", " ", paste(deparse(formula(step_fit), width.cutoff=500L), collapse=" ")),
                  direction=direction)
         }, error=function(e) {
             warns$warn(gtxtf("Stepwise variable selection could not be computed: %s", e$message),
@@ -2581,7 +2747,7 @@ compute_variable_selection <- function(fit, varselmethod="stepwise", stepdir="bo
 # ── Lenth's (1989) pseudo-standard-error method for unreplicated designs ────
 # Provides a valid significance assessment for effect estimates when there are
 # no (or very few) residual degrees of freedom for a classical t-test - the
-# standard approach used by Minitab/JMP for unreplicated two-level factorials.
+# standard approach used by common DOE practice for unreplicated two-level factorials.
 # Reference: Lenth, R.V. (1989), "Quick and Easy Analysis of Unreplicated
 # Factorials", Technometrics, 31(4), 469-473.
 lenth_pse <- function(effects) {
@@ -2682,6 +2848,9 @@ effect_term_codes <- function(term_names, var_names) {
 .doe_submit_plot <- function(expr, width=960, height=720, res=115) {
     e  <- substitute(expr)
     pe <- parent.frame()
+    # an interactive version of this chart was already registered for the HTML report
+    skip_img <- exists(".fa_capture") && isTRUE(.fa_capture$skip_img)
+    if (skip_img) .fa_capture$skip_img <- FALSE
     wd <- .doe_find_writable_dir()
     if (is.null(wd)) wd <- tempdir()
     fp <- file.path(wd, paste0("doe_plot_", as.integer(Sys.time()), "_",
@@ -2693,6 +2862,8 @@ effect_term_codes <- function(term_names, var_names) {
         tryCatch(grDevices::dev.off(), error=function(e2) NULL)
     })
     if (file.exists(fp)) {
+        if (exists(".fa_capture") && isTRUE(.fa_capture$on) && !skip_img)
+            tryCatch(.fa_capture_add(list(type="image", b64=.fa_b64(fp))), error=function(e2) NULL)
         spssRGraphics.Submit(fp)
         tryCatch(file.remove(fp), error=function(e2) NULL)
     } else {
@@ -3083,12 +3254,12 @@ create_all_plots <- function(fit, data, variables, designtype,
                     # significance threshold line (tcrit) would be drawn.
                     # Whenever tcrit exceeded every bar -- routine with
                     # Lenth's PSE method on small/noisy designs, and exactly
-                    # the scenario Minitab's own chart is designed to show --
+                    # the scenario the conventional chart is designed to show --
                     # the dashed line and its value label landed at or past
                     # the plot's right edge instead of cleanly inside it.
                     # Including tcrit in the axis-max calculation guarantees
-                    # the line is always fully visible, matching Minitab's
-                    # actual behavior (the line always draws; Minitab's own
+                    # the line is always fully visible, matching the conventional
+                    # actual behavior (the line always draws; the conventional
                     # docs note it's omitted only in the unrelated
                     # zero-standard-error case). Purely a display change --
                     # bar heights, tcrit's value, and the significance
@@ -3138,7 +3309,7 @@ create_all_plots <- function(fit, data, variables, designtype,
     # Industry-standard complement to the signed Normal Plot below: plots
     # ordered |effects| against half-normal quantiles, with ME/SME reference
     # lines from Lenth's PSE. Valid whether or not residual df exist, and is
-    # the recommended method (Minitab/JMP/Montgomery) for factorial-family
+    # the recommended method (standard DOE texts (Montgomery)) for factorial-family
     # designs with sparse active effects.
     if (do_pareto) {
         tryCatch({
@@ -3420,7 +3591,7 @@ create_external_plots <- function(fit, data, variables, designtype,
     }
     
     # ── Pareto Chart (ggplot2) ───────────────────────────────────────────────
-    # NOTE: a genuine "Pareto Chart of Effects" (Minitab/JMP/Design-Expert
+    # NOTE: a genuine "Pareto Chart of Effects" (commercial DOE packages
     # convention; Montgomery's "Design and Analysis of Experiments") is a bar
     # chart of |standardized effect| (or |effect| under Lenth's PSE when the
     # model is saturated) sorted in descending order, with a SINGLE
@@ -3483,7 +3654,7 @@ create_external_plots <- function(fit, data, variables, designtype,
                     # PSE method on small/noisy designs -- the dashed
                     # threshold line and its value label above could render
                     # right at or past the panel's edge instead of cleanly
-                    # inside it, instead of the fully-visible line Minitab's
+                    # inside it, instead of the fully-visible line the conventional
                     # own Pareto Chart of Effects always draws. expand_limits()
                     # guarantees tcrit is included in the trained range without
                     # overriding ggplot2's own default padding/expansion for
@@ -4026,7 +4197,7 @@ do_optimization <- function(fit, data, variables, spec, goal, warns, responsevar
 # A true sibling of do_optimization() above, which is left completely
 # untouched: when exactly one response variable is supplied, that existing
 # function still runs unchanged. This new function is only ever invoked when
-# RESPONSEVAR contains 2+ space-separated names, fitting Minitab's Response
+# RESPONSEVAR contains 2+ space-separated names, fitting the conventional Response
 # Optimizer behavior -- simultaneous optimization across all responses via a
 # single composite desirability score, the geometric mean of each response's
 # individual desirability (Derringer & Suich, 1980, "Simultaneous
@@ -4318,7 +4489,7 @@ do_multi_response_optimization <- function(fits, data, variables, spec, goals, w
 # ════════════════════════════════════════════════════════════════════════════
 # Standard noncentral-t power calculation for detecting a single effect from
 # an unreplicated 2-level design (Montgomery, "Design and Analysis of
-# Experiments", and the same model Minitab's own "Power and Sample Size for
+# Experiments", and the same model the conventional "Power and Sample Size for
 # Factorial Designs" is built on): for n runs, Var(effect estimate) =
 # 4*sigma^2/n, so SE = 2*sigma/sqrt(n); expressing the effect in
 # standard-deviation units d = effect/sigma cancels sigma entirely (so no
@@ -4540,6 +4711,7 @@ heatmap_embed <- function(cm, divid, title, filename="heatmap", zmid=0, default_
 # back to the old htmltools::save_html()/libdir approach (multi-file) only if
 # 'jsonlite' is missing, so behavior is never worse than before.
 save_single_file_report <- function(sections, out_path, title, warns) {
+    title <- paste(as.character(title), collapse=" "); out_path <- as.character(out_path)[1]
     if (has_jsonlite) {
         body_html <- tryCatch(htmltools::doRenderTags(htmltools::tagList(sections)),
                                error=function(e) NULL)
@@ -4576,9 +4748,11 @@ save_single_file_report <- function(sections, out_path, title, warns) {
                 'Plotly.react(gd, newData, newLayout); };</script></head>',
                 '<body style="margin:0;font-family:\'Segoe UI\',Helvetica,Arial,sans-serif;background:#fff;">',
                 body_html, '</body></html>')
-            ok <- tryCatch({ writeLines(full_html, out_path, useBytes=TRUE); TRUE },
+            full_html <- paste(full_html, collapse="\n")   # always one string, whatever the parts
+            ok <- tryCatch({ con <- file(out_path, open="w", encoding="UTF-8")
+                             tryCatch(writeLines(full_html, con, useBytes=TRUE), finally=close(con)); TRUE },
                             error=function(e) { warns$warn(gtxtf("Could not save interactive HTML report: %s", e$message), dostop=FALSE); FALSE })
-            if (isTRUE(ok)) tryCatch(utils::browseURL(out_path), error=function(e) NULL)
+            if (isTRUE(ok)) .doe_open_html(out_path)
             return(ok)
         }
     }
@@ -4591,7 +4765,7 @@ save_single_file_report <- function(sections, out_path, title, warns) {
         warns$warn(gtxtf("Could not save interactive HTML report: %s", e$message), dostop=FALSE)
         FALSE
     })
-    if (isTRUE(ok)) tryCatch(utils::browseURL(out_path), error=function(e) NULL)
+    if (isTRUE(ok)) .doe_open_html(out_path)
     ok
 }
 
@@ -4975,7 +5149,7 @@ export_html_report <- function(fit, data, variables, designtype, warns,
                 # the visible plot area even though its label (in the title
                 # above) was still shown. Setting an explicit range that
                 # always includes tcrit guarantees the line itself is visible
-                # too, matching Minitab's own chart. Purely a display change;
+                # too, matching the conventional chart. Purely a display change;
                 # normal charts (tcrit already inside the bars' range) get
                 # essentially the same range Plotly's autorange would have
                 # picked anyway.
@@ -5281,7 +5455,7 @@ export_html_report <- function(fit, data, variables, designtype, warns,
                         marker=list(color="#2E86AB", size=10),
                         text=df$Action,
                         hovertemplate=paste0(gtxt("Step"), " %{x}<br>AIC: %{y:.3f}<br>%{text}<extra></extra>"))
-                    p_trace <- plotly::add_trace(p_trace, x=df$Step[best_idx], y=df$AIC[best_idx],
+                    p_trace <- plotly::add_trace(p_trace, x=df$Step[best_idx], y=df$AIC[best_idx], inherit=FALSE,
                         type="scatter", mode="markers", name=gtxt("Optimal step"),
                         marker=list(color="#E74C3C", size=16, symbol="diamond"),
                         hovertemplate=paste0(gtxt("Optimal step"), "<br>AIC: %{y:.3f}<extra></extra>"))
@@ -5492,6 +5666,9 @@ export_html_report <- function(fit, data, variables, designtype, warns,
         }, error=function(e) NULL)
     }
 
+    # Only the header so far means no chart was requested: write no (empty) report.
+    if (length(sections) <= 1) return(invisible(NULL))
+
     sections[[length(sections)+1]] <- htmltools::tags$div(
         style="padding:12px 32px;color:#999;font-size:11px;border-top:1px solid #eee;",
         gtxt("Generated by STATS DOE ANALYSIS. This interactive report supplements the static charts in the SPSS Viewer; open it in any modern web browser."))
@@ -5556,6 +5733,9 @@ export_design_html_report <- function(res, specdata, variables, designtype, mode
         "taguchi"        = "Taguchi Orthogonal Array",
         "lhs"            = "Latin Hypercube Sampling",
         "dsd"            = "Definitive Screening Design (DSD)",
+        "simplexlattice" = "Simplex-Lattice Mixture Design",
+        "simplexcentroid"= "Simplex-Centroid Mixture Design",
+        "fullfactorial"  = "General Full Factorial",
         designtype)
 
     sections <- list()
@@ -5585,7 +5765,27 @@ export_design_html_report <- function(res, specdata, variables, designtype, mode
         meta_cols <- c("Reps","Proportion","StdOrder","RunOrder","Block","CenterPt","PtType")
         num_vars  <- intersect(as.character(variables), setdiff(names(res$design), meta_cols))
         num_vars  <- num_vars[sapply(num_vars, function(v) is.numeric(res$design[[v]]))]
-        if (length(num_vars) >= 2) {
+        if (length(num_vars) == 2) {
+            # plotly.js draws an empty panel for a 2-variable splom with the
+            # upper half and diagonal hidden, so use an ordinary scatter here.
+            order_col <- if ("RunOrder" %in% names(res$design)) res$design$RunOrder else seq_len(nrow(res$design))
+            p_xy <- plotly::plot_ly(x=res$design[[num_vars[1]]], y=res$design[[num_vars[2]]],
+                type="scatter", mode="markers",
+                marker=list(color=order_col, colorscale="Viridis", showscale=TRUE,
+                            colorbar=list(title=gtxt("Run Order")),
+                            size=10, line=list(color="white", width=0.5)),
+                text=paste(gtxt("Run"), order_col),
+                hovertemplate=paste0("%{text}<br>", num_vars[1], ": %{x}<br>", num_vars[2], ": %{y}<extra></extra>"))
+            p_xy <- plotly::layout(p_xy, title=ptitle(gtxt("Design Space Coverage (color = Run Order)")),
+                xaxis=list(title=num_vars[1]), yaxis=list(title=num_vars[2]))
+            p_xy <- plotly::config(p_xy, displaylogo=FALSE,
+                toImageButtonOptions=list(format="png", filename="design_space", scale=2))
+            sections[[length(sections)+1]] <- htmltools::tags$div(style="padding:16px 32px;",
+                htmltools::tags$h2(style="color:#2C3E50;", gtxt("Design Space Visualization")),
+                htmltools::tags$p(style="color:#555;font-size:13px;",
+                    gtxt("Scatter of the two numeric factors, colored by run order, to visually confirm balanced coverage.")),
+                plotly_embed(p_xy, "chart_splom", height="520px"))
+        } else if (length(num_vars) > 2) {
             dims      <- lapply(num_vars, function(v) list(label=v, values=res$design[[v]]))
             order_col <- if ("RunOrder" %in% names(res$design)) res$design$RunOrder else seq_len(nrow(res$design))
             # NOTE: 'splom' traces have no 'mode' attribute (unlike 'scatter') -
@@ -5715,6 +5915,8 @@ displayresults <- function(res, data, hasformula, variables, vlevels, designtype
         "taguchi"        = "Taguchi Orthogonal Array",
         "lhs"            = "Latin Hypercube Sampling",
         "dsd"            = "Definitive Screening Design (DSD)",
+        "simplexlattice" = "Simplex-Lattice Mixture Design",
+        "simplexcentroid"= "Simplex-Centroid Mixture Design",
         designtype)
 
     if (hasformula) model <- gtxt("formula")
@@ -5758,8 +5960,14 @@ displayresults <- function(res, data, hasformula, variables, vlevels, designtype
     if ("Proportion" %in% names(preview) && is.numeric(preview$Proportion)) {
         preview$Proportion <- sprintf("%.2f", preview$Proportion)
     }
+    for (cn in names(preview)) {
+        v <- preview[[cn]]
+        if (is.numeric(v) && all(is.na(v) | abs(v - round(v)) < 1e-9))
+            preview[[cn]] <- ifelse(is.na(v), "", format(round(v), scientific=FALSE, trim=TRUE))
+    }
     spsspivottable.Display(preview,
-        title  = gtxtf("Design Worksheet — %d runs (showing first 20)", nrow(res$design)),
+        title  = if (nrow(res$design) > 20) gtxtf("Design Worksheet — %d runs (showing first 20)", nrow(res$design))
+                 else gtxtf("Design Worksheet — %d runs", nrow(res$design)),
         caption= gtxt("Full design saved to output dataset. Add your response column, then re-run with RESPONSEVAR= and ANALYZE=YES."),
         templateName="DOEWORKSHEET", outline=gtxt("Design Worksheet"))
 
@@ -5847,7 +6055,62 @@ displayresults <- function(res, data, hasformula, variables, vlevels, designtype
 # DATASET GENERATION
 # ════════════════════════════════════════════════════════════════════════════
 
-gendataset <- function(res, outputdataset, variables, factorlist, warns) {
+# ── Factor list without VARNAMES ─────────────────────────────────────────────
+.doe_meta_cols <- c("reps","rep","replicate","replicates","proportion","stdorder","runorder","run",
+                    "block","blocks","centerpt","pttype","id")
+.doe_saved_factors <- function() {
+    v <- tryCatch(unlist(spssdictionary.GetDataFileAttributes("DOE_Factors")), error=function(e) NULL)
+    if (is.null(v)) character(0) else trimws(as.character(v))
+}
+.doe_resolve_factors <- function(data, responses) {
+    nm <- names(data); resp_lc <- tolower(as.character(unlist(responses)))
+    saved <- .doe_saved_factors()
+    if (length(saved)) {
+        m <- nm[match(tolower(saved), tolower(nm))]
+        m <- m[!is.na(m) & !tolower(m) %in% resp_lc]
+        if (length(m)) return(list(factors=m, source="saved"))
+    }
+    n <- nrow(data)
+    cand <- nm[!tolower(nm) %in% c(.doe_meta_cols, resp_lc)]
+    keep <- vapply(cand, function(v) {
+        x <- data[[v]]; x <- x[!is.na(x)]
+        if (is.character(x) || is.factor(x)) x <- trimws(as.character(x))
+        if (is.character(x)) x <- x[nzchar(x)]
+        k <- length(unique(x))
+        k >= 2 && k <= min(7, max(2, floor(n / 2)))
+    }, logical(1))
+    list(factors=cand[keep], source="detected")
+}
+.doe_show_factors <- function(data, factors, source) {
+    if (source == "given" || !length(factors)) return(invisible(NULL))
+    lv <- vapply(factors, function(v) { x <- data[[v]]; x <- x[!is.na(x)]
+        u <- sort(unique(if (is.numeric(x)) x else trimws(as.character(x))))
+        paste(if (length(u) > 6) c(head(u, 6), "...") else u, collapse=", ") }, character(1))
+    df <- data.frame(vapply(factors, function(v) if (is.numeric(data[[v]])) gtxt("Numeric") else gtxt("Text"), character(1)),
+                     lv, stringsAsFactors=FALSE)
+    names(df) <- c(gtxt("Type"), gtxt("Settings in the data"))
+    cap <- if (source == "saved") gtxt("VARNAMES was not given: the factors were read from the design information saved in this dataset (data file attribute DOE_Factors). Give VARNAMES to use other factors.")
+           else gtxt("VARNAMES was not given: these columns were detected as factors (2 to 7 distinct settings; order, block, center-point and response columns excluded). Check the list; if it is wrong, name the factors with VARNAMES.")
+    tryCatch({
+        StartProcedure(gtxt("Design of Experiments: Factors Used"), "STATSDOEFACTORS")
+        spsspivottable.Display(df, title=gtxt("Factors Used"), templateName="DOEFACTORSUSED",
+                               outline=gtxt("Factors Used"), rowlabels=factors, caption=cap)
+    }, error=function(e) NULL, finally=tryCatch(spsspkg.EndProcedure(), error=function(e) NULL))
+}
+.doe_store_factors <- function(factors, warns) {
+    saved <- .doe_saved_factors()
+    if (length(saved) == length(factors) && all(tolower(saved) == tolower(factors))) return(invisible(NULL))
+    q <- function(x) paste0("'", gsub("'", "''", x, fixed=TRUE), "'")
+    cmd <- paste0("DATAFILE ATTRIBUTE ATTRIBUTE=",
+                  paste0("DOE_Factors[", seq_along(factors), "](", q(factors), ")", collapse=" "),
+                  " DOE_CreatedBy('STATS DOE ANALYSIS').")
+    ok <- tryCatch({ if (length(saved)) spsspkg.Submit("DATAFILE ATTRIBUTE DELETE=DOE_Factors.")
+                     spsspkg.Submit(cmd); TRUE }, error=function(e) FALSE)
+    if (ok) warns$warn(gtxtf("The factor list (%s) was saved in this dataset's design information; save the dataset to keep it. Next time VARNAMES can be left blank.",
+                             paste(factors, collapse=", ")), dostop=FALSE)
+}
+
+gendataset <- function(res, outputdataset, variables, factorlist, warns, designtype=NULL) {
     varspec    <- list()
     varnames   <- names(res$design)
     varnameslc <- lapply(varnames, tolower)
@@ -5880,6 +6143,14 @@ gendataset <- function(res, outputdataset, variables, factorlist, warns) {
     dsdict <- do.call(spssdictionary.CreateSPSSDictionary, varspec)
     spssdictionary.SetDictionaryToSPSS(outputdataset, dsdict)
     spssdata.SetDataToSPSS(outputdataset, res$design)
+    # Store the design information in the dataset itself (data file
+    # attributes, saved with the .sav file), so a later analysis of this
+    # dataset does not need VARNAMES -- like a Minitab design worksheet.
+    fnames <- intersect(as.character(unlist(variables)), names(res$design))
+    if (length(fnames))
+        tryCatch(spssdictionary.SetDataFileAttributes(outputdataset, DOE_Factors=fnames,
+                     DOE_DesignType=if (is.null(designtype)) "" else as.character(designtype)[1],
+                     DOE_CreatedBy="STATS DOE ANALYSIS"), error=function(e) NULL)
     spssdictionary.EndDataStep()
 }
 
@@ -6009,7 +6280,23 @@ validate <- function(varnames, frml, factors, nlevels, lows, highs, centers, rou
     curvature_default <- if (dtype=="optimal" && mdl %in% c("quad","cubic","cubics")) {
         if (mdl=="quad") 5L else 7L
     } else NA_integer_
+    # A user FORMULA with squared/higher powers (I(A^2), A^2, quad(), cubic(),
+    # poly()) needs the same: 2 levels make A^2 a copy of the constant/A and
+    # the design matrix singular. Only the variables with curvature are raised.
+    curv_vars <- character(0)
+    if (dtype == "optimal" && !is.null(frml) && nzchar(paste(unlist(frml), collapse=""))) {
+        ftxt <- paste(unlist(frml), collapse=" ")
+        if (grepl("(quad|cubic|cubicS|poly)\\s*\\(", ftxt)) curv_vars <- as.character(unlist(varnames))
+        else for (v in as.character(unlist(varnames)))
+            if (grepl(paste0("(^|[^A-Za-z0-9._])", gsub("([.])", "\\\\\\1", v), "\\s*\\^\\s*[2-9]"), ftxt)) curv_vars <- c(curv_vars, v)
+    }
     for (i in seq_len(nvars)) {
+        if (is.na(curvature_default) && as.character(varnames[[i]]) %in% curv_vars &&
+            !isTRUE(factors[[i]]) && !isTRUE(mixtures[[i]])) {
+            if (is.null(nlevels[[i]]) || is.na(nlevels[[i]]) || nlevels[[i]] == 0) { nlevels[[i]] <- 5; next }
+            if (nlevels[[i]] < 3) warns$warn(gtxtf("Variable %s appears squared (or higher) in FORMULA but has only %d level(s); at least 3 levels (5+ recommended) are needed, otherwise the design is singular.",
+                                                  varnames[[i]], nlevels[[i]]), dostop=FALSE)
+        }
         if (is.null(nlevels[[i]]) || is.na(nlevels[[i]]) || nlevels[[i]]==0) {
             if (!is.na(curvature_default) && !isTRUE(factors[[i]]) && !isTRUE(mixtures[[i]])) {
                 nlevels[[i]] <- curvature_default
@@ -6025,9 +6312,16 @@ validate <- function(varnames, frml, factors, nlevels, lows, highs, centers, rou
     }
 
     # Validate ranges
-    for (i in seq_len(nvars))
-        if (lows[[i]]>=highs[[i]] || centers[[i]]<lows[[i]] || centers[[i]]>highs[[i]])
+    # (factor and mixture variables may legitimately have no numeric range:
+    # skip the check for them instead of failing on NaN/NA comparisons)
+    for (i in seq_len(nvars)) {
+        if (!is.finite(lows[[i]]) || !is.finite(highs[[i]]) || !is.finite(centers[[i]])) {
+            if (isTRUE(factors[[i]]) || isTRUE(mixtures[[i]])) next
+        }
+        if (isTRUE(lows[[i]]>=highs[[i]] || centers[[i]]<lows[[i]] || centers[[i]]>highs[[i]]) ||
+            any(is.na(c(lows[[i]], highs[[i]], centers[[i]]))))
             warns$warn(gtxtf("Invalid low/high/center for variable %s", varnames[[i]]), dostop=TRUE)
+    }
     data.frame(var=unlist(varnames), lows, highs, centers, nlevels, roundtos, factors, mixtures)
 }
 
@@ -6175,6 +6469,3312 @@ Warn <- function(procname, omsid) {
 }
 
 # ════════════════════════════════════════════════════════════════════════════
+# CODED-FACTOR ANALYSIS ENGINE (2-level factorial, Plackett-Burman,
+# definitive screening and response-surface designs)
+# ════════════════════════════════════════════════════════════════════════════
+# Standard textbook least-squares analysis of designed experiments
+# (Montgomery, "Design and Analysis of Experiments"; Myers, Montgomery &
+# Anderson-Cook, "Response Surface Methodology"):
+#   * numeric factors are coded to -1 (low) / +1 (high) so that effects are
+#     comparable across factors and main effects stay interpretable when
+#     interactions are present;
+#   * a two-level text/categorical factor is coded -1 (first level) / +1;
+#     categoricals with more levels use sum-to-zero (effect) coding;
+#   * center points are detected and, for two-level designs, tested with a
+#     single 0/1 curvature term;
+#   * terms aliased with earlier terms are removed and reported;
+#   * adjusted (partial) sums of squares, t-tests, VIFs, PRESS-based
+#     predicted R-squared, lack-of-fit vs. pure error when replicates exist;
+#   * optional hierarchical backward elimination by p-value;
+#   * multi-response optimization by the Derringer & Suich (1980)
+#     desirability approach.
+# Every table, chart and piece of wording here is this extension's own.
+# ════════════════════════════════════════════════════════════════════════════
+
+.fa_meta_cols <- c("Reps","Proportion","StdOrder","RunOrder","Block","Blocks",
+                   "CenterPt","PtType")
+
+# Split "name=value name2=value2" (spaces or commas between pairs) into a named
+# character vector; names are matched case-insensitively later.
+.fa_parse_pairs <- function(x) {
+    x <- parse_multi_values(x)
+    if (length(x) == 0) return(character(0))
+    x <- x[grepl("=", x, fixed=TRUE)]
+    if (length(x) == 0) return(character(0))
+    nm  <- trimws(sub("=.*$", "", x))
+    val <- trimws(sub("^[^=]*=", "", x))
+    setNames(val, nm)
+}
+
+.fa_match_name <- function(nm, choices) {
+    i <- match(tolower(nm), tolower(choices))
+    if (is.na(i)) NA_character_ else choices[i]
+}
+
+# ── Factor coding ───────────────────────────────────────────────────────────
+# Returns list(info=list(per factor), ctpt=logical vector of center rows,
+#              axial=logical vector, kind="factorial"|"rsm"|"dsd")
+fa_build_coding <- function(data, factors, warns, lows=NULL, highs=NULL,
+                            lowlevels=NULL, designtype=NULL, categorical=NULL,
+                            designmodel=NULL) {
+    catforce <- tolower(parse_multi_values(categorical))
+    dt0 <- tolower(if (is.null(designtype)) "" else as.character(designtype)[1])
+    n <- nrow(data)
+    if (!is.null(data$StdOrder)) {
+        so <- suppressWarnings(as.numeric(data$StdOrder))
+        ord <- if (all(is.finite(so))) order(so) else seq_len(n)
+    } else ord <- seq_len(n)
+    lowlv <- .fa_parse_pairs(lowlevels)
+    lows  <- suppressWarnings(as.numeric(unlist(lows)))
+    highs <- suppressWarnings(as.numeric(unlist(highs)))
+
+    # Explicit center/axial marker column (0 = center, 1 = cube, -1 = axial),
+    # the convention used both by this extension's own generator and by the
+    # most common commercial packages' worksheets.
+    cp_col <- NULL
+    for (cn in c("CenterPt","PtType")) {
+        if (cn %in% names(data)) {
+            v <- suppressWarnings(as.numeric(data[[cn]]))
+            if (all(is.finite(v) | is.na(v)) && any(is.finite(v))) { cp_col <- v; break }
+        }
+    }
+
+    info <- list()
+    for (i in seq_along(factors)) {
+        f <- factors[i]
+        x <- data[[f]]
+        if (is.null(x)) {
+            stop(gtxtf("Factor variable '%s' was not found in the data.", f), call.=FALSE)
+        }
+        is_num <- is.numeric(x) && !is.factor(x)
+        # numeric factors treated as categorical: listed in CATEGORICAL, or a
+        # general full factorial with more than two levels
+        num_as_cat <- is_num && (tolower(f) %in% catforce ||
+            (dt0 == "fullfactorial" && length(unique(x[is.finite(x)])) > 2))
+        if (!is_num || num_as_cat) {
+            xc   <- trimws(as.character(x))
+            xc[xc == ""] <- NA
+            lv   <- unique(xc[ord][!is.na(xc[ord])])
+            if (num_as_cat) lv <- as.character(sort(unique(x[is.finite(x)])))
+            if (length(lv) < 2)
+                stop(gtxtf("Factor '%s' has fewer than two distinct levels in the data.", f), call.=FALSE)
+            ll <- lowlv[tolower(names(lowlv)) == tolower(f)]
+            if (length(ll)) {
+                m <- match(tolower(ll[1]), tolower(lv))
+                if (is.na(m))
+                    warns$warn(gtxtf("LOWLEVELS: level '%s' does not occur in factor '%s'; first-appearing level used instead.", ll[1], f), dostop=FALSE)
+                else lv <- c(lv[m], lv[-m])
+            }
+            info[[f]] <- list(name=f, type="categorical", levels=lv, nlev=length(lv), numeric_levels=num_as_cat)
+        } else {
+            u <- sort(unique(x[is.finite(x)]))
+            if (length(u) < 2)
+                stop(gtxtf("Factor '%s' has fewer than two distinct levels in the data.", f), call.=FALSE)
+            lo <- NA; hi <- NA
+            if (length(lows) >= i && length(highs) >= i &&
+                is.finite(lows[i]) && is.finite(highs[i]) && highs[i] != lows[i]) {
+                lo <- lows[i]; hi <- highs[i]
+            } else if (!is.null(cp_col)) {
+                # the cube points define the -1/+1 levels
+                cube <- x[is.finite(cp_col) & cp_col == 1 & is.finite(x)]
+                if (length(unique(cube)) >= 2) { lo <- min(cube); hi <- max(cube) }
+            }
+            if (!is.finite(lo) || !is.finite(hi)) {
+                if (length(u) == 5) { lo <- u[2]; hi <- u[4] }        # central composite
+                else { lo <- u[1]; hi <- u[length(u)] }
+            }
+            info[[f]] <- list(name=f, type="numeric", low=lo, high=hi,
+                              mid=(lo+hi)/2, half=(hi-lo)/2, nlev=length(u))
+        }
+    }
+
+    # Center points: explicit marker, else all numeric factors at their mid.
+    num_f <- Filter(function(z) z$type == "numeric", info)
+    if (!is.null(cp_col)) {
+        ctpt  <- is.finite(cp_col) & cp_col == 0
+        axial <- is.finite(cp_col) & cp_col == -1
+    } else if (length(num_f)) {
+        ctpt <- rep(TRUE, n)
+        for (z in num_f) {
+            x <- data[[z$name]]
+            ctpt <- ctpt & is.finite(x) & abs(x - z$mid) <= 1e-9 * max(1, abs(z$mid))
+        }
+        axial <- rep(FALSE, n)
+        for (z in num_f) {
+            cx <- (data[[z$name]] - z$mid) / z$half
+            axial <- axial | (is.finite(cx) & abs(cx) > 1 + 1e-9)
+        }
+    } else {
+        ctpt <- rep(FALSE, n); axial <- rep(FALSE, n)
+    }
+
+    # Design kind decides the default model.
+    dt <- tolower(if (is.null(designtype)) "" else as.character(designtype))
+    nonctr <- !ctpt & !axial
+    two_level <- all(vapply(info, function(z) {
+        if (z$type == "categorical") return(z$nlev == 2)
+        x <- data[[z$name]][nonctr]
+        length(unique(x[is.finite(x)])) <= 2
+    }, logical(1)))
+    multi_cat <- any(vapply(info, function(z) z$type == "categorical" && z$nlev > 2, logical(1)))
+    dm <- tolower(if (is.null(designmodel)) "" else as.character(unlist(designmodel))[1])
+    kind <- if (dt == "dsd") "dsd"
+            else if (dt %in% c("ccd","rsm","boxbehnken")) "rsm"
+            else if (dt %in% c("optimal","lhs") && dm %in% c("linear","item_313_a")) "linear"
+            else if (two_level) "factorial"
+            else if (multi_cat && !any(vapply(info, function(z) z$type == "numeric" && z$nlev >= 3, logical(1)))) "general"
+            else "rsm"
+    list(info=info, ctpt=ctpt, axial=axial, kind=kind)
+}
+
+# Build the coded design frame (one column per factor, internal names X1..Xk)
+fa_code_data <- function(data, coding) {
+    info <- coding$info
+    out  <- data.frame(row.names=seq_len(nrow(data)))
+    for (i in seq_along(info)) {
+        z  <- info[[i]]
+        nm <- paste0("X", i)
+        x  <- data[[z$name]]
+        if (z$type == "numeric") {
+            out[[nm]] <- (as.numeric(x) - z$mid) / z$half
+        } else {
+            xc <- trimws(as.character(x)); xc[xc == ""] <- NA
+            if (z$nlev == 2) {
+                out[[nm]] <- ifelse(is.na(xc), NA_real_, ifelse(xc == z$levels[1], -1, 1))
+            } else {
+                fx <- factor(xc, levels=z$levels)
+                contrasts(fx) <- contr.sum(z$nlev)
+                out[[nm]] <- fx
+            }
+        }
+    }
+    out$CtPt <- as.numeric(coding$ctpt)
+    out
+}
+
+# Letter codes A, B, C, ... (skipping I, the conventional identity symbol)
+fa_letters <- function(k) {
+    L <- setdiff(LETTERS, "I")
+    if (k <= length(L)) L[seq_len(k)] else paste0("F", seq_len(k))
+}
+
+# ── Model terms ─────────────────────────────────────────────────────────────
+# A term is an integer vector of factor indices (repeats = powers), or the
+# special string "CTPT". Term keys: "1", "1:2", "1:1", "CTPT".
+.fa_term_key   <- function(t) if (identical(t, "CTPT")) "CTPT" else paste(sort(t), collapse=":")
+.fa_term_order <- function(t) if (identical(t, "CTPT")) 99L else length(t)
+.fa_is_square  <- function(t) !identical(t, "CTPT") && length(t) == 2 && t[1] == t[2]
+
+fa_default_terms <- function(coding, include_ctpt=TRUE) {
+    k    <- length(coding$info)
+    num  <- which(vapply(coding$info, function(z) z$type == "numeric", logical(1)))
+    lin  <- as.list(seq_len(k))
+    tw   <- if (k >= 2) combn(k, 2, simplify=FALSE) else list()
+    sq   <- lapply(num[vapply(coding$info[num], function(z) z$nlev >= 3, logical(1))],
+                   function(i) c(i, i))
+    terms <- switch(coding$kind,
+        factorial = c(lin, tw),
+        general   = c(lin, tw),
+        linear    = lin,
+        dsd       = c(lin, sq),
+        rsm       = c(lin, sq, tw),
+        c(lin, sq, tw))
+    if (coding$kind == "factorial" && include_ctpt && any(coding$ctpt) && length(num) > 0)
+        terms <- c(terms, list("CTPT"))
+    terms
+}
+
+# Parse the TERMS text. Tokens are whitespace separated; a token is one or
+# more factor references joined by '*' (variable name or letter code), or a
+# keyword: LINEAR, 2WAY, 3WAY, FULL, SQUARES, QUADRATIC, CTPT. A block may be
+# prefixed "response:" and blocks are separated by ';'. Returns a named list
+# of term lists ("" = applies to every response without its own block).
+fa_parse_terms_spec <- function(spec, coding, warns) {
+    if (is.null(spec)) return(list())
+    spec <- paste(unlist(spec), collapse=" ")
+    if (!nzchar(trimws(spec))) return(list())
+    k      <- length(coding$info)
+    fnames <- names(coding$info)
+    lets   <- fa_letters(k)
+    num    <- which(vapply(coding$info, function(z) z$type == "numeric", logical(1)))
+    blocks <- strsplit(spec, ";", fixed=TRUE)[[1]]
+    out    <- list()
+    for (b in blocks) {
+        b <- trimws(b); if (!nzchar(b)) next
+        resp <- ".all"
+        if (grepl(":", b, fixed=TRUE)) {
+            resp <- trimws(sub(":.*$", "", b)); b <- trimws(sub("^[^:]*:", "", b))
+        }
+        toks  <- strsplit(b, "[[:space:],]+")[[1]]; toks <- toks[nzchar(toks)]
+        terms <- list()
+        for (tk in toks) {
+            up <- toupper(tk)
+            if (up %in% c("CTPT","CENTERPT","CENTER","CURVATURE")) { terms <- c(terms, list("CTPT")); next }
+            if (up %in% c("LINEAR","MAIN","MAINEFFECTS")) { terms <- c(terms, as.list(seq_len(k))); next }
+            if (up %in% c("2WAY","TWOWAY")) { if (k >= 2) terms <- c(terms, combn(k, 2, simplify=FALSE)); next }
+            if (up %in% c("3WAY","THREEWAY")) { if (k >= 3) terms <- c(terms, combn(k, 3, simplify=FALSE)); next }
+            if (up == "FULL") { for (o in seq_len(k)) terms <- c(terms, combn(k, o, simplify=FALSE)); next }
+            if (up %in% c("SQUARES","SQUARE")) { terms <- c(terms, lapply(num, function(i) c(i,i))); next }
+            if (up %in% c("QUADRATIC","FULLQUAD","QUAD")) {
+                terms <- c(terms, as.list(seq_len(k)), lapply(num, function(i) c(i,i)))
+                if (k >= 2) terms <- c(terms, combn(k, 2, simplify=FALSE)); next
+            }
+            parts <- strsplit(tk, "*", fixed=TRUE)[[1]]
+            idx <- integer(0)
+            for (p in parts) {
+                j <- match(tolower(p), tolower(fnames))
+                if (is.na(j)) j <- match(toupper(p), lets)
+                if (is.na(j) && grepl("^[A-Za-z]{2,}$", p) && all(toupper(strsplit(p, "")[[1]]) %in% lets)) {
+                    # compact letter form such as AB or AAB
+                    j <- match(toupper(strsplit(p, "")[[1]]), lets)
+                }
+                if (any(is.na(j))) {
+                    warns$warn(gtxtf("TERMS: '%s' is not a factor name or letter code and was ignored.", p), dostop=FALSE)
+                    idx <- NULL; break
+                }
+                idx <- c(idx, j)
+            }
+            if (is.null(idx) || !length(idx)) next
+            idx <- sort(idx)
+            tab <- table(idx)
+            if (any(tab > 2) || (any(tab == 2) && length(idx) > 2)) {
+                warns$warn(gtxtf("TERMS: '%s' is not supported (only squares X*X and cross products of distinct factors).", tk), dostop=FALSE); next
+            }
+            if (any(tab == 2) && coding$info[[idx[1]]]$type != "numeric") {
+                warns$warn(gtxtf("TERMS: a square term needs a numeric factor ('%s' ignored).", tk), dostop=FALSE); next
+            }
+            terms <- c(terms, list(idx))
+        }
+        # de-duplicate, keep first occurrence
+        keys  <- vapply(terms, .fa_term_key, character(1))
+        terms <- terms[!duplicated(keys)]
+        out[[resp]] <- terms
+    }
+    out
+}
+
+# Order terms the conventional way: linear, squares, 2-way, 3-way, ..., CtPt;
+# within a group by factor index (A, B, AB, AC, ...).
+fa_sort_terms <- function(terms) {
+    if (!length(terms)) return(terms)
+    grp <- vapply(terms, function(t) {
+        if (identical(t, "CTPT")) return(100)
+        if (length(t) == 1) return(1)
+        if (.fa_is_square(t)) return(2)
+        length(t) + 1
+    }, numeric(1))
+    key <- vapply(terms, function(t) if (identical(t, "CTPT")) "" else
+        paste(sprintf("%03d", sort(t)), collapse=""), character(1))
+    terms[order(grp, key)]
+}
+
+fa_term_label <- function(t, coding, letters=FALSE) {
+    if (identical(t, "CTPT")) return(gtxt("Center Point"))
+    nm <- if (letters) fa_letters(length(coding$info)) else names(coding$info)
+    paste(nm[t], collapse=if (letters) "" else "*")
+}
+
+# Hierarchy: a term's "parents" are the lower-order terms it contains.
+.fa_contains <- function(big, small) {
+    if (identical(big, "CTPT") || identical(small, "CTPT")) return(FALSE)
+    if (length(small) >= length(big)) return(FALSE)
+    tb <- table(big); ts <- table(small)
+    all(names(ts) %in% names(tb)) && all(ts <= tb[names(ts)])
+}
+
+
+# ── Model matrix for a list of terms ─────────────────────────────────────────
+# Returns list(X=matrix incl. intercept, assign=integer term index per column
+# (0 = intercept, -1 = blocks), colterm=term keys)
+fa_model_matrix <- function(cd, terms, blockcol=NULL) {
+    n    <- nrow(cd)
+    cols <- list(`(Intercept)`=rep(1, n))
+    asg  <- 0L
+    cnm  <- "(Intercept)"
+    if (!is.null(blockcol)) {
+        bf <- factor(blockcol)
+        if (nlevels(bf) > 1) {
+            cm <- contr.sum(nlevels(bf))
+            B  <- cm[as.integer(bf), , drop=FALSE]
+            for (j in seq_len(ncol(B))) {
+                cols[[paste0("Blk", j)]] <- B[, j]; asg <- c(asg, -1L)
+                cnm <- c(cnm, paste0("Blk", j))
+            }
+        }
+    }
+    for (ti in seq_along(terms)) {
+        t <- terms[[ti]]
+        if (identical(t, "CTPT")) {
+            cols[["CtPt"]] <- cd$CtPt; asg <- c(asg, ti); cnm <- c(cnm, "CtPt"); next
+        }
+        # product of the (possibly multi-column) pieces
+        piece <- matrix(1, n, 1); pnm <- ""
+        for (f in t) {
+            v <- cd[[paste0("X", f)]]
+            if (is.factor(v)) {
+                M <- contrasts(v)[as.integer(v), , drop=FALSE]
+                M[is.na(v), ] <- NA
+                newp <- NULL; newn <- NULL
+                for (a in seq_len(ncol(piece))) for (b in seq_len(ncol(M))) {
+                    newp <- cbind(newp, piece[, a] * M[, b])
+                    newn <- c(newn, paste0(pnm[a], "X", f, "_", b))
+                }
+                piece <- newp; pnm <- newn
+            } else {
+                piece <- piece * v
+                pnm   <- paste0(pnm, "X", f, ".")
+            }
+        }
+        for (a in seq_len(ncol(piece))) {
+            cn <- paste0("T", ti, "_", a)
+            cols[[cn]] <- piece[, a]; asg <- c(asg, ti); cnm <- c(cnm, cn)
+        }
+    }
+    X <- do.call(cbind, cols); colnames(X) <- cnm
+    list(X=X, assign=asg)
+}
+
+.fa_sse <- function(X, y) {
+    if (ncol(X) == 0) return(sum(y^2))
+    f <- lm.fit(X, y)
+    sum(f$residuals^2)
+}
+
+# Fit one response. Removes terms that are aliased (linearly dependent on
+# earlier terms), reporting them. Returns an "fa" object.
+fa_fit <- function(data, cd, coding, resp, terms, warns, alpha=0.05,
+                   conf=0.95, blockcol=NULL, report_alias=TRUE, trans=NULL) {
+    y   <- suppressWarnings(as.numeric(data[[resp]]))
+    lambda <- if (!is.null(trans)) trans$lambda else NA_real_
+    y_orig <- y
+    if (is.finite(lambda)) {
+        if (any(y[is.finite(y)] <= 0)) stop(gtxtf("%s: a Box-Cox transformation needs every response value > 0.", resp), call.=FALSE)
+        y <- if (abs(lambda) < 1e-12) log(y) else y^lambda
+    }
+    fac <- cd[, paste0("X", seq_along(coding$info)), drop=FALSE]
+    ok  <- is.finite(y) & stats::complete.cases(fac)
+    if (!is.null(blockcol)) ok <- ok & !is.na(blockcol)
+    if (sum(!ok) > 0)
+        warns$warn(gtxtf("%s: %d row(s) with a missing response or factor value were excluded.", resp, sum(!ok)), dostop=FALSE)
+    cdo <- cd[ok, , drop=FALSE]; yo <- y[ok]
+    blk <- if (is.null(blockcol)) NULL else blockcol[ok]
+    terms <- fa_sort_terms(terms)
+    # drop CtPt if it cannot be estimated (no center rows, or all rows centers)
+    if (any(vapply(terms, identical, logical(1), "CTPT"))) {
+        s <- sum(cdo$CtPt)
+        if (s == 0 || s == nrow(cdo)) terms <- Filter(function(t) !identical(t, "CTPT"), terms)
+    }
+    removed <- character(0)
+    repeat {
+        mm <- fa_model_matrix(cdo, terms, blk)
+        qrX <- qr(mm$X, tol=1e-7)
+        if (qrX$rank == ncol(mm$X)) break
+        # first column (in model order) that is dependent on the ones before it
+        bad <- NA
+        for (j in 2:ncol(mm$X)) {
+            if (qr(mm$X[, 1:j, drop=FALSE], tol=1e-7)$rank < j) { bad <- j; break }
+        }
+        ti <- mm$assign[bad]
+        if (ti <= 0) { warns$warn(gtxtf("%s: the block variable is confounded with the design and was dropped.", resp), dostop=FALSE); blk <- NULL; next }
+        removed <- c(removed, fa_term_label(terms[[ti]], coding))
+        terms <- terms[-ti]
+    }
+    if (length(removed) && report_alias)
+        warns$warn(gtxtf("%s: these terms cannot be estimated separately (aliased with terms already in the model) and were removed: %s",
+                         resp, paste(removed, collapse=", ")), dostop=FALSE)
+    n  <- nrow(mm$X); p <- ncol(mm$X)
+    fit <- lm.fit(mm$X, yo)
+    b   <- fit$coefficients
+    res <- fit$residuals
+    dfe <- n - p
+    sse <- sum(res^2)
+    sst <- sum((yo - mean(yo))^2)
+    mse <- if (dfe > 0) sse / dfe else NA_real_
+    XtXi <- chol2inv(qr.R(qr(mm$X)))
+    se   <- if (dfe > 0) sqrt(diag(XtXi) * mse) else rep(NA_real_, p)
+    tval <- b / se
+    pval <- if (dfe > 0) 2 * pt(-abs(tval), dfe) else rep(NA_real_, p)
+    h    <- rowSums((mm$X %*% XtXi) * mm$X)
+    press <- if (all(h < 1 - 1e-10)) sum((res / (1 - h))^2) else NA_real_
+    # VIF per column: diagonal of the inverse correlation matrix of predictors
+    vif <- rep(NA_real_, p)
+    if (p > 2) {
+        Z <- mm$X[, -1, drop=FALSE]
+        R <- suppressWarnings(cor(Z))
+        vi <- tryCatch(diag(solve(R)), error=function(e) rep(NA_real_, ncol(Z)))
+        vif[-1] <- vi
+    } else if (p == 2) vif[2] <- 1
+    obj <- list(resp=resp, coding=coding, terms=terms, removed=removed,
+                X=mm$X, assign=mm$assign, y=yo, rows=which(ok), cd=cdo, blk=blk,
+                coef=b, se=se, t=tval, p=pval, df_error=dfe, sse=sse, sst=sst,
+                mse=mse, s=sqrt(mse), fitted=as.vector(mm$X %*% b), resid=res,
+                hat=h, XtXi=XtXi, press=press, vif=vif, n=n, alpha=alpha, conf=conf,
+                lambda=lambda, y_orig=y_orig[ok])
+    class(obj) <- "fa"
+    obj
+}
+
+# Back-transform from the Box-Cox scale to the original response scale
+fa_untransform <- function(fo, v) {
+    if (is.null(fo$lambda) || !is.finite(fo$lambda)) return(v)
+    if (abs(fo$lambda) < 1e-12) exp(v) else sign(v) * abs(v)^(1 / fo$lambda)
+}
+fa_predict_orig <- function(fo, newcd) fa_untransform(fo, fa_predict(fo, newcd))
+
+# Box-Cox profile likelihood for the current model matrix
+fa_boxcox <- function(y, X) {
+    if (any(y <= 0)) return(NULL)
+    gm <- exp(mean(log(y)))
+    lam <- seq(-2, 2, by=0.01)
+    ll <- vapply(lam, function(l) {
+        w <- if (abs(l) < 1e-12) gm * log(y) else (y^l - 1) / (l * gm^(l - 1))
+        -length(y) / 2 * log(.fa_sse(X, w) / length(y))
+    }, numeric(1))
+    best <- lam[which.max(ll)]
+    ci <- range(lam[ll >= max(ll) - qchisq(0.95, 1) / 2])
+    list(lambda=best + 0, rounded=round(best * 2) / 2 + 0, lower=ci[1], upper=ci[2])
+}
+
+# Prediction at coded settings (data.frame with X1..Xk and CtPt)
+fa_predict <- function(fo, newcd, se=FALSE) {
+    mm <- fa_model_matrix(newcd, fo$terms, NULL)
+    X  <- mm$X
+    if (!is.null(fo$blk) && any(fo$assign == -1)) {
+        # predictions average over blocks (sum-to-zero coding -> block cols 0)
+        nb <- sum(fo$assign == -1)
+        X  <- cbind(X[, 1, drop=FALSE], matrix(0, nrow(X), nb), X[, -1, drop=FALSE])
+    }
+    fit <- as.vector(X %*% fo$coef)
+    if (!se) return(fit)
+    sef <- sqrt(pmax(0, rowSums((X %*% fo$XtXi) * X))) * fo$s
+    list(fit=fit, se=sef)
+}
+
+# Term selection by p-value: "backward", "forward" or "stepwise" (forward
+# with a removal check after every entry). Hierarchy is kept: a term is only
+# removed when no remaining interaction contains it, and entering an
+# interaction also enters any missing lower-order terms. The center-point and
+# block terms are never removed.
+fa_select <- function(data, cd, coding, resp, terms, warns, method="backward",
+                      alpha_enter=0.15, alpha_remove=0.15, alpha=0.05, conf=0.95,
+                      blockcol=NULL, hierarchical=TRUE, report_alias=FALSE, trans=NULL) {
+    method <- tolower(method)
+    steps <- data.frame(Step=integer(0), Action=character(0), Term=character(0), PValue=numeric(0),
+                        stringsAsFactors=FALSE)
+    lab <- function(t) fa_term_label(t, coding)
+    keyv <- function(tt) vapply(tt, .fa_term_key, character(1))
+    parents_of <- function(t) {
+        if (identical(t, "CTPT") || length(t) < 2) return(list())
+        out <- list()
+        for (o in seq_len(length(t) - 1)) {
+            cmb <- unique(lapply(combn(length(t), o, simplify=FALSE), function(ix) sort(t[ix])))
+            out <- c(out, cmb)
+        }
+        out
+    }
+    fitm <- function(tt, rep=FALSE) fa_fit(data, cd, coding, resp, tt, warns, alpha, conf, blockcol,
+                                           report_alias=rep, trans=trans)
+    pool <- fa_sort_terms(terms)
+    forced <- Filter(function(t) identical(t, "CTPT"), pool)
+    if (method == "backward") {
+        fo <- fitm(pool, report_alias)
+    } else {
+        fo <- fitm(forced, FALSE)
+    }
+    step <- 0; guard <- 0
+    try_remove <- function(fo) {
+        if (fo$df_error < 1) return(NULL)
+        tt <- fo$terms
+        cand <- which(vapply(seq_along(tt), function(i) {
+            t <- tt[[i]]
+            if (identical(t, "CTPT")) return(FALSE)
+            if (hierarchical && any(vapply(tt[-i], .fa_contains, logical(1), small=t))) return(FALSE)
+            TRUE
+        }, logical(1)))
+        if (!length(cand)) return(NULL)
+        pv <- vapply(cand, function(i) fa_term_test(fo, i)$p, numeric(1))
+        if (all(is.na(pv)) || max(pv, na.rm=TRUE) <= alpha_remove) return(NULL)
+        w <- cand[which.max(pv)]
+        list(i=w, p=max(pv, na.rm=TRUE))
+    }
+    if (method == "backward" && fo$df_error < 1)
+        warns$warn(gtxtf("%s: term selection needs at least one error degree of freedom; the starting model is saturated, so backward elimination could not start. Use forward or stepwise selection, or a smaller starting model.", resp), dostop=FALSE)
+    repeat {
+        guard <- guard + 1; if (guard > 200) break
+        if (method == "backward") {
+            r <- try_remove(fo); if (is.null(r)) break
+            step <- step + 1
+            steps[step, ] <- list(step, gtxt("Removed"), lab(fo$terms[[r$i]]), r$p)
+            fo <- fitm(fo$terms[-r$i])
+            next
+        }
+        # forward entry
+        inmod <- keyv(fo$terms)
+        best <- NULL
+        for (t in pool) {
+            if (identical(t, "CTPT") || .fa_term_key(t) %in% inmod) next
+            add <- c(list(t), if (hierarchical) Filter(function(q) !(.fa_term_key(q) %in% inmod), parents_of(t)) else list())
+            ft <- tryCatch(suppressWarnings(fitm(c(fo$terms, add))), error=function(e) NULL)
+            if (is.null(ft) || ft$df_error < 1) next
+            j <- which(keyv(ft$terms) == .fa_term_key(t))
+            if (!length(j)) next
+            pv <- fa_term_test(ft, j)$p
+            if (is.finite(pv) && pv < alpha_enter && (is.null(best) || pv < best$p)) best <- list(t=t, add=add, p=pv)
+        }
+        if (is.null(best)) break
+        step <- step + 1
+        steps[step, ] <- list(step, gtxt("Entered"), lab(best$t), best$p)
+        fo <- fitm(c(fo$terms, best$add))
+        if (method == "stepwise") {
+            r <- try_remove(fo)
+            if (!is.null(r) && .fa_term_key(fo$terms[[r$i]]) != .fa_term_key(best$t)) {
+                step <- step + 1
+                steps[step, ] <- list(step, gtxt("Removed"), lab(fo$terms[[r$i]]), r$p)
+                fo <- fitm(fo$terms[-r$i])
+            }
+        }
+    }
+    fo$steps <- steps
+    fo$selection <- method
+    fo
+}
+
+fa_backward <- function(data, cd, coding, resp, terms, warns, alpha_remove=0.10,
+                        alpha=0.05, conf=0.95, blockcol=NULL, hierarchical=TRUE,
+                        force=character(0), report_alias=FALSE) {
+    fa_select(data, cd, coding, resp, terms, warns, method="backward", alpha_remove=alpha_remove,
+              alpha=alpha, conf=conf, blockcol=blockcol, hierarchical=hierarchical, report_alias=report_alias)
+}
+
+# Partial F test for a set of term indices (adjusted SS).
+fa_term_test <- function(fo, term_idx) {
+    cols <- which(fo$assign %in% term_idx)
+    df   <- length(cols)
+    Xr   <- fo$X[, -cols, drop=FALSE]
+    ss   <- .fa_sse(Xr, fo$y) - fo$sse
+    if (fo$df_error > 0 && df > 0) {
+        f <- (ss / df) / fo$mse
+        p <- pf(f, df, fo$df_error, lower.tail=FALSE)
+    } else { f <- NA_real_; p <- NA_real_ }
+    list(df=df, ss=ss, ms=if (df > 0) ss / df else NA_real_, f=f, p=p)
+}
+
+# Pure error from replicated settings (identical coded factor settings and
+# block); returns list(df, ss) or NULL.
+fa_pure_error <- function(fo) {
+    fx  <- fo$cd[, paste0("X", seq_along(fo$coding$info)), drop=FALSE]
+    fx  <- as.data.frame(lapply(fx, function(v) if (is.factor(v)) as.integer(v) else round(v, 8)))
+    fx$CtPt <- fo$cd$CtPt
+    key <- apply(fx, 1, paste, collapse="|")
+    if (!is.null(fo$blk)) key <- paste(key, fo$blk)
+    g  <- split(fo$y, key)
+    df <- sum(vapply(g, function(v) length(v) - 1, numeric(1)))
+    if (df <= 0) return(NULL)
+    ss <- sum(vapply(g, function(v) sum((v - mean(v))^2), numeric(1)))
+    list(df=df, ss=ss)
+}
+
+# ── Tables ───────────────────────────────────────────────────────────────────
+.fa_r <- function(x, d=4) ifelse(is.na(x), NA, signif(x, max(d, 1) + 2))
+.fa_fmt <- function(x, digits=4) {
+    out <- ifelse(is.na(x), "", formatC(x, digits=digits, format="f"))
+    out
+}
+.fa_pfmt <- function(p) ifelse(is.na(p), "", ifelse(p < 0.0005, "0.000", formatC(p, digits=3, format="f")))
+
+fa_anova_df <- function(fo) {
+    tt <- fo$terms; coding <- fo$coding
+    rows <- list()
+    add <- function(src, df, ss, f=NA, p=NA) {
+        rows[[length(rows) + 1]] <<- data.frame(Source=src, DF=df, AdjSS=ss,
+            AdjMS=if (df > 0) ss / df else NA, F=f, P=p, stringsAsFactors=FALSE)
+    }
+    ssm <- fo$sst - fo$sse
+    dfm <- ncol(fo$X) - 1
+    fm  <- if (fo$df_error > 0 && dfm > 0) (ssm / dfm) / fo$mse else NA
+    add(gtxt("Model"), dfm, ssm, fm, if (!is.na(fm)) pf(fm, dfm, fo$df_error, lower.tail=FALSE) else NA)
+    if (any(fo$assign == -1)) {
+        cols <- which(fo$assign == -1)
+        ss <- .fa_sse(fo$X[, -cols, drop=FALSE], fo$y) - fo$sse; df <- length(cols)
+        f  <- if (fo$df_error > 0) (ss/df)/fo$mse else NA
+        add(gtxt("  Blocks"), df, ss, f, if (!is.na(f)) pf(f, df, fo$df_error, lower.tail=FALSE) else NA)
+    }
+    grp_of <- function(t) {
+        if (identical(t, "CTPT")) return("ctpt")
+        if (length(t) == 1) return("lin")
+        if (.fa_is_square(t)) return("sq")
+        paste0("w", length(t))
+    }
+    groups <- vapply(tt, grp_of, character(1))
+    glabel <- function(g) switch(g, lin=gtxt("  Linear"), sq=gtxt("  Square"),
+        ctpt=gtxt("  Curvature"),
+        gtxtf("  %d-Way Interactions", as.integer(sub("w", "", g))))
+    for (g in unique(groups[order(match(groups, c("lin","sq", paste0("w", 2:30), "ctpt")))])) {
+        idx <- which(groups == g)
+        if (g != "ctpt") {
+            tst <- fa_term_test(fo, idx)
+            add(glabel(g), tst$df, tst$ss, tst$f, tst$p)
+            for (i in idx) {
+                ti <- fa_term_test(fo, i)
+                add(paste0("    ", fa_term_label(tt[[i]], coding)), ti$df, ti$ss, ti$f, ti$p)
+            }
+        } else {
+            ti <- fa_term_test(fo, idx)
+            add(glabel(g), ti$df, ti$ss, ti$f, ti$p)
+        }
+    }
+    add(gtxt("Error"), fo$df_error, fo$sse)
+    pe <- fa_pure_error(fo)
+    if (!is.null(pe) && fo$df_error - pe$df > 0) {
+        lof_df <- fo$df_error - pe$df; lof_ss <- fo$sse - pe$ss
+        f <- (lof_ss / lof_df) / (pe$ss / pe$df)
+        add(gtxt("  Lack-of-Fit"), lof_df, lof_ss, f,
+            if (pe$ss > 0) pf(f, lof_df, pe$df, lower.tail=FALSE) else NA)
+        add(gtxt("  Pure Error"), pe$df, pe$ss)
+    }
+    add(gtxt("Total"), fo$n - 1, fo$sst)
+    out <- do.call(rbind, rows)
+    out$AdjMS[out$Source == gtxt("Total")] <- NA
+    out
+}
+
+fa_coef_df <- function(fo, factorial_effects=TRUE) {
+    coding <- fo$coding
+    lab <- character(length(fo$coef)); eff <- rep(NA_real_, length(fo$coef))
+    bl <- 0
+    for (j in seq_along(fo$coef)) {
+        a <- fo$assign[j]
+        if (a == 0) { lab[j] <- gtxt("Constant"); next }
+        if (a == -1) { bl <- bl + 1; lab[j] <- gtxtf("Block %d", bl); next }
+        t <- fo$terms[[a]]
+        base <- fa_term_label(t, coding)
+        ncol_t <- sum(fo$assign == a)
+        if (ncol_t > 1) {
+            k <- sum(fo$assign[seq_len(j)] == a)
+            base <- paste0(base, " (", k, ")")
+        }
+        lab[j] <- base
+        if (factorial_effects && !identical(t, "CTPT") && !.fa_is_square(t) && ncol_t == 1)
+            eff[j] <- 2 * fo$coef[j]
+    }
+    data.frame(Term=lab, Effect=eff, Coef=fo$coef, SECoef=fo$se, T=fo$t, P=fo$p,
+               VIF=fo$vif, stringsAsFactors=FALSE, row.names=NULL)
+}
+
+fa_summary_df <- function(fo) {
+    r2   <- if (fo$sst > 0) 1 - fo$sse / fo$sst else NA
+    p    <- ncol(fo$X)
+    adj  <- if (fo$df_error > 0 && fo$sst > 0) 1 - (fo$sse / fo$df_error) / (fo$sst / (fo$n - 1)) else NA
+    pred <- if (!is.na(fo$press) && fo$sst > 0) max(0, 1 - fo$press / fo$sst) else NA
+    data.frame(S=fo$s, R2=r2, R2adj=adj, R2pred=pred, PRESS=fo$press)
+}
+
+# Uncoded (natural-unit) coefficients. Numeric coded factor x_c = (X - m)/h
+# is expanded symbolically; categorical factors are fixed at each level
+# combination, giving one equation per combination.
+fa_uncoded <- function(fo) {
+    coding <- fo$coding; info <- coding$info
+    cat_idx <- which(vapply(info, function(z) z$type == "categorical", logical(1)))
+    combos <- if (length(cat_idx)) expand.grid(lapply(info[cat_idx], function(z) z$levels),
+                                               stringsAsFactors=FALSE) else data.frame(dummy=1)
+    # polynomial = named numeric vector; names are monomials "Var1#Var2" ("1" = constant)
+    padd <- function(P, key, val) { if (is.na(P[key])) P[key] <- 0; P[key] <- P[key] + val; P }
+    res <- list()
+    for (ci in seq_len(nrow(combos))) {
+        P <- c(`1`=0)
+        for (j in seq_along(fo$coef)) {
+            a <- fo$assign[j]; b <- unname(fo$coef[j])
+            if (a == -1) next
+            if (a == 0) { P <- padd(P, "1", b); next }
+            t <- fo$terms[[a]]
+            if (identical(t, "CTPT")) { P <- padd(P, "CTPT", b); next }
+            cur <- c(`1`=b)
+            colk <- sum(fo$assign[seq_len(j)] == a)
+            for (f in t) {
+                z <- info[[f]]
+                if (z$type == "numeric") {
+                    nxt <- numeric(0)
+                    for (k in names(cur)) {
+                        parts <- if (k == "1") character(0) else strsplit(k, "#", fixed=TRUE)[[1]]
+                        m1 <- paste(sort(c(parts, z$name)), collapse="#")
+                        nxt <- padd(nxt, m1, cur[[k]] / z$half)
+                        nxt <- padd(nxt, k,  -cur[[k]] * z$mid / z$half)
+                    }
+                    cur <- nxt
+                } else {
+                    lvl <- combos[ci, match(f, cat_idx)]
+                    v <- if (z$nlev == 2) { if (lvl == z$levels[1]) -1 else 1 }
+                         else contr.sum(z$nlev)[match(lvl, z$levels), colk]
+                    cur <- cur * v
+                }
+            }
+            for (k in names(cur)) P <- padd(P, k, cur[[k]])
+        }
+        res[[ci]] <- P
+    }
+    keys <- unique(unlist(lapply(res, names)))
+    deg  <- vapply(keys, function(k) if (k == "1") 0 else if (k == "CTPT") 99 else
+        length(strsplit(k, "#", fixed=TRUE)[[1]]), numeric(1))
+    keys <- keys[order(deg, keys)]
+    lab <- vapply(keys, function(k) {
+        if (k == "1") return(gtxt("Constant"))
+        if (k == "CTPT") return(gtxt("Center Point"))
+        parts <- strsplit(k, "#", fixed=TRUE)[[1]]
+        tb <- table(factor(parts, levels=unique(parts)))
+        paste(ifelse(tb > 1, paste0(names(tb), "^", tb), names(tb)), collapse="*")
+    }, character(1))
+    out <- data.frame(Term=unname(lab), stringsAsFactors=FALSE)
+    for (ci in seq_len(nrow(combos))) {
+        cn <- if (length(cat_idx)) paste(paste0(names(info)[cat_idx], "=", unlist(combos[ci, ])), collapse=", ")
+              else gtxt("Coefficient")
+        out[[cn]] <- vapply(keys, function(k) { v <- res[[ci]][k]; if (is.na(v)) 0 else unname(v) }, numeric(1))
+    }
+    rownames(out) <- NULL
+    out
+}
+
+# Alias structure for a two-level (fractional) design: for each model term,
+# the other interactions (up to maxorder) whose +-1 columns are identical or
+# exact negatives on the non-center runs.
+fa_alias <- function(fo, maxorder=4) {
+    coding <- fo$coding; k <- length(coding$info)
+    if (coding$kind != "factorial") return(NULL)
+    if (any(vapply(coding$info, function(z) z$type == "categorical" && z$nlev > 2, logical(1)))) return(NULL)
+    cube <- fo$cd$CtPt == 0
+    F <- as.matrix(fo$cd[cube, paste0("X", seq_len(k)), drop=FALSE])
+    if (nrow(F) >= 2^k) return(NULL)   # full factorial: no aliasing
+    lets <- fa_letters(k)
+    allterms <- list()
+    for (o in seq_len(min(k, maxorder))) allterms <- c(allterms, combn(k, o, simplify=FALSE))
+    colv <- lapply(allterms, function(t) apply(F[, t, drop=FALSE], 1, prod))
+    labs <- vapply(allterms, function(t) paste(lets[t], collapse=""), character(1))
+    ident <- rep(1, nrow(F))
+    defining <- labs[vapply(colv, function(v) isTRUE(all.equal(v, ident)) || isTRUE(all.equal(v, -ident)), logical(1))]
+    out <- list()
+    for (t in fo$terms) {
+        if (identical(t, "CTPT") || .fa_is_square(t)) next
+        v <- apply(F[, t, drop=FALSE], 1, prod)
+        lab <- paste(lets[t], collapse="")
+        al <- character(0)
+        for (i in seq_along(allterms)) {
+            if (labs[i] == lab) next
+            if (isTRUE(all.equal(colv[[i]], v))) al <- c(al, paste0("+ ", labs[i]))
+            else if (isTRUE(all.equal(colv[[i]], -v))) al <- c(al, paste0("- ", labs[i]))
+        }
+        out[[length(out) + 1]] <- data.frame(Term=lab, Aliases=if (length(al)) paste(al, collapse=" ") else "",
+                                              stringsAsFactors=FALSE)
+    }
+    list(table=do.call(rbind, out), defining=defining,
+         legend=data.frame(Letter=lets, Factor=names(coding$info), stringsAsFactors=FALSE))
+}
+
+
+# ── Display helpers ──────────────────────────────────────────────────────────
+.fa_num <- function(x, sig=5) {
+    x <- as.numeric(x)
+    out <- rep("", length(x))
+    ok  <- is.finite(x)
+    out[ok] <- trimws(formatC(signif(x[ok], sig), digits=sig, format="fg"))
+    out
+}
+.fa_fix <- function(x, d=2) { x <- as.numeric(x); ifelse(is.finite(x), formatC(x, digits=d, format="f"), "") }
+.fa_pv  <- function(p) { p <- as.numeric(p); ifelse(is.finite(p), formatC(p, digits=3, format="f"), "") }
+.fa_pct <- function(x) ifelse(is.finite(x), paste0(formatC(100 * x, digits=2, format="f"), "%"), "")
+
+.fa_show <- function(df, title, template, outline=NULL, caption=NULL, rowlabels=NULL) {
+    df <- as.data.frame(df, stringsAsFactors=FALSE, check.names=FALSE)
+    if (is.null(rowlabels)) rowlabels <- as.character(seq_len(nrow(df)))
+    args <- list(df, title=title, templateName=template, rowlabels=rowlabels,
+                 hiderowdimtitle=TRUE, hidecoldimtitle=TRUE)
+    if (!is.null(outline)) args$outline <- outline
+    if (!is.null(caption)) args$caption <- caption
+    .fa_capture_add(list(type="table", title=title, df=df, rowlabels=rowlabels, caption=caption))
+    do.call(spsspivottable.Display, args)
+}
+
+# All tables for one fitted response. Must be called inside a procedure.
+fa_display_tables <- function(fo, opts) {
+    resp  <- fo$resp
+    coding <- fo$coding
+    alpha <- fo$alpha
+    kindlab <- switch(coding$kind, factorial=gtxt("two-level factorial"),
+                      dsd=gtxt("definitive screening"), gtxt("response surface"))
+    # Factor information
+    if (isTRUE(opts$factorinfo)) {
+        fi <- do.call(rbind, lapply(seq_along(coding$info), function(i) {
+            z <- coding$info[[i]]
+            data.frame(Code=fa_letters(length(coding$info))[i], Factor=z$name,
+                       Type=if (z$type == "numeric") gtxt("Numeric") else gtxt("Text/categorical"),
+                       Low=if (z$type == "numeric") .fa_num(z$low) else z$levels[1],
+                       High=if (z$type == "numeric") .fa_num(z$high) else paste(z$levels[-1], collapse=", "),
+                       stringsAsFactors=FALSE)
+        }))
+        names(fi) <- c(gtxt("Code"), gtxt("Factor"), gtxt("Type"), gtxt("Coded -1"), gtxt("Coded +1"))
+        .fa_show(fi, gtxtf("Factor Coding: %s", resp), "DOEFACTORINFO", outline=gtxt("Factor Coding"),
+                 caption=gtxtf("Design treated as %s. Runs used: %d (center points: %d%s).", kindlab, fo$n,
+                               sum(fo$cd$CtPt == 1),
+                               if (any(coding$axial)) gtxtf(", axial points: %d", sum(coding$axial[fo$rows])) else ""))
+    }
+    # Backward elimination steps
+    if (!is.null(fo$boxcox)) {
+        bc <- fo$boxcox
+        bt <- data.frame(.fa_fix(bc$lambda, 2), .fa_fix(bc$rounded, 1),
+                         paste0("(", .fa_fix(bc$lower, 2), ", ", .fa_fix(bc$upper, 2), ")"),
+                         .fa_fix(fo$lambda, 2), stringsAsFactors=FALSE)
+        names(bt) <- c(gtxt("Best lambda"), gtxt("Rounded lambda"), gtxt("95% CI"), gtxt("Lambda used"))
+        .fa_show(bt, gtxtf("Box-Cox Transformation: %s", resp), "DOEBOXCOX", outline=gtxt("Box-Cox"),
+                 rowlabels=resp,
+                 caption=gtxt("The model is fitted to Y^lambda (natural log when lambda = 0); tables and effect charts are on that scale, the optimizer reports original units. Lambda = 1 means no transformation is needed."))
+    }
+    if (!is.null(fo$steps) && nrow(fo$steps) > 0) {
+        st <- data.frame(fo$steps$Step, fo$steps$Action, fo$steps$Term, .fa_pv(fo$steps$PValue), stringsAsFactors=FALSE)
+        names(st) <- c(gtxt("Step"), gtxt("Action"), gtxt("Term"), gtxt("P-Value"))
+        meth <- switch(fo$selection, backward=gtxt("Backward elimination"), forward=gtxt("Forward selection"),
+                       gtxt("Stepwise selection"))
+        .fa_show(st[, -1, drop=FALSE], gtxtf("Term Selection: %s", resp), "DOESELECTION", outline=gtxt("Term Selection"),
+                 rowlabels=as.character(st[[1]]),
+                 caption=gtxtf("%s. Alpha to enter = %s, alpha to remove = %s; hierarchy kept (an interaction always keeps its lower-order terms).",
+                               meth, format(opts$alphaenter), format(opts$alpharemove)))
+    } else if (!is.null(fo$selection) && fo$selection != "none") {
+        .fa_show(data.frame(Result=gtxt("No terms were entered or removed."), stringsAsFactors=FALSE),
+                 gtxtf("Term Selection: %s", resp), "DOESELECTION", outline=gtxt("Term Selection"), rowlabels=resp)
+    }
+    # Coefficients
+    cf <- fa_coef_df(fo, factorial_effects=(coding$kind == "factorial"))
+    show_eff <- coding$kind == "factorial"
+    ct <- data.frame(Term=cf$Term, stringsAsFactors=FALSE)
+    if (show_eff) ct$Effect <- .fa_num(cf$Effect)
+    ct$Coef <- .fa_num(cf$Coef); ct$SE <- .fa_num(cf$SECoef)
+    ct$T <- .fa_fix(cf$T, 2); ct$P <- .fa_pv(cf$P); ct$VIF <- .fa_fix(cf$VIF, 2)
+    ct$VIF[1] <- ""
+    names(ct) <- c(gtxt("Term"), if (show_eff) gtxt("Effect"), gtxt("Coefficient"), gtxt("SE Coef."),
+                   gtxt("t"), gtxt("Sig."), gtxt("VIF"))
+    cap <- if (fo$df_error > 0)
+        gtxtf("Coded units. Effect = 2 x coefficient. Error df = %d; terms with Sig. < %s are significant at alpha = %s.",
+              fo$df_error, format(alpha), format(alpha))
+    else gtxt("Coded units. No error degrees of freedom: standard errors and tests are unavailable; judge effects with the Pareto or normal plot of effects (Lenth's method).")
+    .fa_show(ct[, -1, drop=FALSE], gtxtf("Coded Coefficients: %s", resp), "DOECODEDCOEF",
+             outline=gtxt("Coded Coefficients"), caption=cap, rowlabels=ct[[1]])
+    # Model summary
+    sm <- fa_summary_df(fo)
+    sd <- data.frame(.fa_num(sm$S), .fa_pct(sm$R2), .fa_pct(sm$R2adj), .fa_pct(sm$R2pred), .fa_num(sm$PRESS),
+                     stringsAsFactors=FALSE)
+    names(sd) <- c(gtxt("S"), gtxt("R-squared"), gtxt("Adj. R-squared"), gtxt("Pred. R-squared"), gtxt("PRESS"))
+    .fa_show(sd, gtxtf("Model Summary: %s", resp), "DOEMODELSUMMARY", outline=gtxt("Model Summary"),
+             caption=gtxt("S = residual standard deviation. Predicted R-squared uses leave-one-out (PRESS) residuals; shown as 0 when negative."),
+             rowlabels=resp)
+    # ANOVA
+    an <- fa_anova_df(fo)
+    ad <- data.frame(an$DF, .fa_num(an$AdjSS), .fa_num(an$AdjMS), .fa_fix(an$F, 2), .fa_pv(an$P),
+                     stringsAsFactors=FALSE)
+    names(ad) <- c(gtxt("df"), gtxt("Adj. SS"), gtxt("Adj. MS"), gtxt("F"), gtxt("Sig."))
+    .fa_show(ad, gtxtf("Analysis of Variance: %s", resp), "DOECODEDANOVA", outline=gtxt("ANOVA"),
+             caption=gtxt("Adjusted (partial) sums of squares: each term is tested given all other terms in the model."),
+             rowlabels=an$Source)
+    # Uncoded equation(s)
+    if (isTRUE(opts$equation)) {
+        uc <- fa_uncoded(fo)
+        ud <- uc[, -1, drop=FALSE]
+        for (j in seq_len(ncol(ud))) ud[[j]] <- .fa_num(ud[[j]], 8)
+        .fa_show(ud, gtxtf("Regression Equation in Natural Units: %s", resp), "DOEUNCODED",
+                 outline=gtxt("Natural-Unit Equation"),
+                 caption=gtxtf("%s = sum of coefficient x term, with factors in their original units%s.", resp,
+                               if (any(vapply(coding$info, function(z) z$type == "categorical", logical(1))))
+                                   gtxt("; one column per level of the text factor(s)") else ""),
+                 rowlabels=uc$Term)
+    }
+    # Alias structure
+    if (isTRUE(opts$alias)) {
+        al <- tryCatch(fa_alias(fo), error=function(e) NULL)
+        if (!is.null(al) && !is.null(al$table)) {
+            at <- al$table; names(at) <- c(gtxt("Term"), gtxt("Aliased With"))
+            lg <- paste(paste0(al$legend$Letter, " = ", al$legend$Factor), collapse="; ")
+            .fa_show(at[, 2, drop=FALSE], gtxtf("Alias Structure: %s", resp), "DOEALIAS", outline=gtxt("Alias Structure"),
+                     caption=paste0(if (length(al$defining)) gtxtf("Defining relation: I = %s. ", paste(al$defining, collapse=" = ")) else "",
+                                    if (length(fo$removed)) gtxtf("Not estimable separately (removed): %s. ", paste(fo$removed, collapse=", ")) else "", lg),
+                     rowlabels=at[[1]])
+        }
+    }
+    # Unusual observations
+    if (isTRUE(opts$diagnostics) && fo$df_error > 0) {
+        sres <- fo$resid / (fo$s * sqrt(pmax(1e-12, 1 - fo$hat)))
+        p    <- ncol(fo$X)
+        flagR <- abs(sres) > 2
+        flagX <- fo$hat > 3 * p / fo$n
+        u <- which(flagR | flagX)
+        if (length(u)) {
+            ud <- data.frame(.fa_num(fo$y[u]), .fa_num(fo$fitted[u]), .fa_num(fo$resid[u]), .fa_fix(sres[u], 2),
+                             ifelse(flagR[u] & flagX[u], "R X", ifelse(flagR[u], "R", "X")), stringsAsFactors=FALSE)
+            names(ud) <- c(resp, gtxt("Fit"), gtxt("Residual"), gtxt("Std. Residual"), gtxt("Flag"))
+            .fa_show(ud, gtxtf("Unusual Observations: %s", resp), "DOEUNUSUAL", outline=gtxt("Unusual Observations"),
+                     caption=gtxt("R = |standardized residual| > 2;  X = leverage > 3p/n. Row = case number in the active dataset."),
+                     rowlabels=as.character(fo$rows[u]))
+        }
+    }
+    invisible(NULL)
+}
+
+# Standardized effects for the charts: t-values when error df > 0, otherwise
+# Lenth pseudo-t (effect / PSE) with m/3 df.
+fa_std_effects <- function(fo) {
+    keep <- which(fo$assign > 0)
+    keep <- keep[vapply(keep, function(j) !identical(fo$terms[[fo$assign[j]]], "CTPT"), logical(1))]
+    lab  <- fa_coef_df(fo)$Term[keep]
+    code <- vapply(keep, function(j) {
+        t <- fo$terms[[fo$assign[j]]]
+        s <- fa_term_label(t, fo$coding, letters=TRUE)
+        if (sum(fo$assign == fo$assign[j]) > 1) paste0(s, "(", sum(fo$assign[seq_len(j)] == fo$assign[j]), ")") else s
+    }, character(1))
+    if (fo$df_error > 0) {
+        tv <- fo$t[keep]; crit <- qt(1 - fo$alpha / 2, fo$df_error); method <- "t"; df <- fo$df_error
+    } else {
+        eff <- 2 * fo$coef[keep]
+        m   <- length(eff)
+        if (m < 3) return(NULL)
+        s0  <- 1.5 * median(abs(eff))
+        pse <- 1.5 * median(abs(eff)[abs(eff) < 2.5 * s0])
+        if (!is.finite(pse) || pse <= 0) return(NULL)
+        tv <- eff / pse; df <- m / 3; crit <- qt(1 - fo$alpha / 2, df); method <- "lenth"
+    }
+    list(t=tv, label=lab, code=code, crit=crit, df=df, method=method)
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# INTERACTIVE CHARTS FOR THE HTML REPORT (plotly.js figures built as JSON)
+# Each fa_plot_* function still draws its static chart for the SPSS Viewer;
+# when the HTML report is being captured it also registers an interactive
+# plotly.js version of the same chart (built directly as JSON, so only the
+# 'jsonlite' package is needed). The static PNG is then left out of the HTML.
+# Charts without an interactive version fall back to the embedded PNG.
+# ════════════════════════════════════════════════════════════════════════════
+.fa_ip_on <- function() isTRUE(.fa_capture$on) && requireNamespace("jsonlite", quietly=TRUE)
+.fa_A <- function(x) I(as.vector(x))                       # always a JSON array
+.fa_M <- function(z) { z[!is.finite(z)] <- NA; I(unname(z)) } # matrix -> array of rows
+.fa_ch <- function(data, layout, csv=NULL, name="chart", height=400)
+    list(data=data, layout=layout, csv=csv, name=name, height=height)
+.fa_lay <- function(title, xt="", yt="", ...) {
+    l <- list(title=list(text=title, font=list(size=14), x=0.02, xanchor="left"),
+              xaxis=list(title=list(text=xt), zeroline=FALSE, gridcolor="#e6e6e6"),
+              yaxis=list(title=list(text=yt), zeroline=FALSE, gridcolor="#e6e6e6"),
+              margin=list(l=60, r=20, t=50, b=55), hovermode="closest",
+              font=list(family="Segoe UI, Helvetica, Arial, sans-serif", size=12),
+              paper_bgcolor="#ffffff", plot_bgcolor="#ffffff", showlegend=FALSE)
+    modifyList(l, list(...))
+}
+.fa_hline <- function(y, color="#999999", dash="dot")
+    list(type="line", xref="paper", x0=0, x1=1, yref="y", y0=y, y1=y, line=list(color=color, dash=dash, width=1.5))
+.fa_vline <- function(x, color="#999999", dash="dash")
+    list(type="line", yref="paper", y0=0, y1=1, xref="x", x0=x, x1=x, line=list(color=color, dash=dash, width=2))
+.fa_iplot <- function(heading, charts, cols=1, note=NULL) {
+    charts <- Filter(Negate(is.null), charts)
+    if (!length(charts)) return(invisible(FALSE))
+    .fa_capture_add(list(type="plotly", heading=heading, charts=charts, cols=cols, note=note))
+    .fa_capture$skip_img <- TRUE
+    invisible(TRUE)
+}
+.fa_try_ip <- function(expr) if (.fa_ip_on()) tryCatch(expr, error=function(e) NULL)
+
+.fa_ip_pareto <- function(fo, se) {
+    o <- order(abs(se$t)); v <- abs(se$t)[o]; cd <- se$code[o]; lab <- se$label[o]
+    sig <- v > se$crit
+    xt <- if (se$method == "t") gtxt("Standardized effect |t|") else gtxt("Standardized effect |effect / PSE|")
+    k <- length(fo$coding$info)
+    legend_txt <- paste0("<b>", gtxt("Code"), "</b><br>", paste(fa_letters(k), names(fo$coding$info), sep="  ", collapse="<br>"))
+    sub <- if (se$method == "t") gtxtf("alpha = %s, error df = %d", format(fo$alpha), fo$df_error)
+           else gtxtf("alpha = %s, Lenth PSE (no error df)", format(fo$alpha))
+    tr <- list(type="bar", orientation="h", x=.fa_A(v), y=.fa_A(cd), customdata=.fa_A(lab),
+               marker=list(color=.fa_A(ifelse(sig, .fa_pal$sig, .fa_pal$bar))),
+               hovertemplate=paste0("%{y} = %{customdata}<br>", xt, ": %{x:.4f}<extra></extra>"))
+    lay <- .fa_lay(gtxtf("Pareto of Standardized Effects: %s", fo$resp), xt, "",
+                   yaxis=list(type="category", automargin=TRUE, title=list(text="")),
+                   margin=list(l=70, r=190, t=70, b=55),
+                   shapes=list(.fa_vline(se$crit, .fa_pal$ref)),
+                   annotations=list(
+                       list(x=se$crit, y=1.02, xref="x", yref="paper", xanchor="left", yanchor="bottom", xshift=4, text=.fa_num(se$crit, 4), showarrow=FALSE,
+                            font=list(color=.fa_pal$ref)),
+                       list(x=0, y=1.09, xref="paper", yref="paper", xanchor="left", text=sub, showarrow=FALSE, font=list(size=11)),
+                       list(x=1.02, y=1, xref="paper", yref="paper", xanchor="left", yanchor="top", align="left",
+                            text=legend_txt, showarrow=FALSE, font=list(size=11))))
+    csv <- data.frame(Code=se$code, Term=se$label, StdEffect=se$t, AbsStdEffect=abs(se$t),
+                      Critical=se$crit, Significant=abs(se$t) > se$crit, stringsAsFactors=FALSE)
+    .fa_iplot(gtxtf("Pareto Chart: %s", fo$resp),
+              list(.fa_ch(list(tr), lay, csv, paste0("pareto_", fo$resp), max(380, 110 + 30 * length(v)))))
+}
+
+.fa_ip_normal <- function(fo, se) {
+    tv <- se$t; m <- length(tv); o <- order(tv); q <- qnorm((seq_len(m) - 0.5) / m)
+    sig <- abs(tv[o]) > se$crit
+    mk <- function(idx, nm, col, fill, txt) list(type="scatter", mode=if (txt) "markers+text" else "markers",
+        name=nm, x=.fa_A(tv[o][idx]), y=.fa_A(q[idx]), text=.fa_A(se$code[o][idx]), textposition="middle right",
+        customdata=.fa_A(se$label[o][idx]),
+        marker=list(size=10, color=fill, line=list(color=col, width=1.5)),
+        hovertemplate="%{text} = %{customdata}<br>effect %{x:.4f}<br>score %{y:.3f}<extra></extra>")
+    trs <- list()
+    if (any(sig))  trs[[length(trs) + 1]] <- mk(which(sig), gtxtf("significant (alpha = %s)", format(fo$alpha)), .fa_pal$sig, .fa_pal$sig, TRUE)
+    if (any(!sig)) trs[[length(trs) + 1]] <- mk(which(!sig), gtxt("not significant"), "#555555", "#ffffff", FALSE)
+    sref <- if (sum(!sig) >= 2) sd(tv[o][!sig]) else NA
+    if (is.finite(sref) && sref > 0) {
+        xr <- range(tv); trs[[length(trs) + 1]] <- list(type="scatter", mode="lines", name=gtxt("reference"),
+            x=.fa_A(xr), y=.fa_A(xr / sref), line=list(color="#888888", dash="dot"), hoverinfo="skip")
+    }
+    lay <- .fa_lay(gtxtf("Normal Plot of Standardized Effects: %s", fo$resp), gtxt("Standardized effect"), gtxt("Normal score"),
+                   showlegend=TRUE, legend=list(x=0.01, y=0.99))
+    csv <- data.frame(Code=se$code[o], Term=se$label[o], StdEffect=tv[o], NormalScore=q, Significant=sig, stringsAsFactors=FALSE)
+    .fa_iplot(gtxtf("Normal Plot of Effects: %s", fo$resp), list(.fa_ch(trs, lay, csv, paste0("normal_effects_", fo$resp), 460)))
+}
+
+.fa_ip_main <- function(fo, fx, vals, ctr, xl, yr, gm, ctp) {
+    nm <- names(fo$coding$info)
+    charts <- lapply(seq_along(fx), function(j) {
+        v <- vals[[j]]; lab <- as.character(xl[[j]])
+        trs <- list(list(type="scatter", mode="lines+markers", x=.fa_A(lab), y=.fa_A(v), name=gtxt("fitted mean"),
+                         line=list(color=.fa_pal$line1, width=2.5), marker=list(size=9),
+                         hovertemplate=paste0(nm[fx[j]], " = %{x}<br>", gtxt("fitted mean"), " %{y:.4f}<extra></extra>")))
+        cc <- ctr[[j]]
+        if (!all(is.na(cc))) {
+            cx <- if (length(cc) == 1) gtxt("center") else lab
+            trs[[2]] <- list(type="scatter", mode="markers", x=.fa_A(cx), y=.fa_A(cc), name=gtxt("center point"),
+                             marker=list(symbol="square", size=11, color=.fa_pal$center),
+                             hovertemplate=paste0(gtxt("center point"), " %{y:.4f}<extra></extra>"))
+        }
+        cats <- if (length(cc) == 1 && !is.na(cc)) c(lab[1], gtxt("center"), lab[-1]) else lab
+        lay <- .fa_lay(nm[fx[j]], nm[fx[j]], gtxtf("Fitted mean of %s", fo$resp),
+                       xaxis=list(type="category", categoryorder="array", categoryarray=.fa_A(cats), title=list(text=nm[fx[j]])),
+                       yaxis=list(range=.fa_A(yr), title=list(text=gtxtf("Fitted mean of %s", fo$resp)), gridcolor="#e6e6e6"),
+                       shapes=list(.fa_hline(gm)))
+        csv <- data.frame(Factor=nm[fx[j]], Level=lab, FittedMean=v, stringsAsFactors=FALSE)
+        if (!all(is.na(cc))) csv$CenterPoint <- if (length(cc) == 1) cc else cc
+        .fa_ch(trs, lay, csv, paste0("main_effect_", nm[fx[j]]), 330)
+    })
+    .fa_iplot(gtxtf("Main Effects (Fitted Means): %s", fo$resp), charts, cols=min(3, length(charts)),
+              note=if (ctp) gtxt("Square = fitted center point; dotted line = overall mean.") else gtxt("Dotted line = overall mean."))
+}
+
+.fa_ip_interactions <- function(fo, pairs) {
+    coding <- fo$coding; nm <- names(coding$info)
+    lv <- function(i) { z <- coding$info[[i]]; if (z$type == "numeric") c(-1, 1) else z$levels }
+    ll <- function(i) { z <- coding$info[[i]]; if (z$type == "numeric") .fa_num(z$mid + c(-1, 1) * z$half, 4) else z$levels }
+    ctp <- .fa_has_ctpt(fo)
+    num_idx <- which(vapply(coding$info, function(z) z$type == "numeric", logical(1)))
+    cols <- c(.fa_pal$line1, .fa_pal$line2, .fa_pal$line3, "#666666", "#B279A2", "#F58518")
+    charts <- lapply(pairs, function(pr) {
+        a <- pr[1]; b <- pr[2]; la <- lv(a); lb <- lv(b)
+        M <- sapply(lb, function(vb) vapply(la, function(va)
+            .fa_marginal(fo, setNames(list(va, vb), as.character(c(a, b)))), numeric(1)))
+        M <- matrix(M, nrow=length(la))
+        xa <- as.character(ll(a)); lbl <- as.character(ll(b))
+        trs <- lapply(seq_len(ncol(M)), function(k) list(type="scatter", mode="lines+markers",
+            name=paste(nm[b], "=", lbl[k]), x=.fa_A(xa), y=.fa_A(M[, k]),
+            line=list(color=cols[(k - 1) %% 6 + 1], width=2.5), marker=list(size=9),
+            hovertemplate=paste0(nm[a], " = %{x}<br>", nm[b], " = ", lbl[k], "<br>%{y:.4f}<extra></extra>")))
+        if (ctp && length(num_idx)) {
+            f <- setNames(as.list(rep(0, length(num_idx))), as.character(num_idx)); f$CtPt <- 1
+            cc <- .fa_marginal(fo, f)
+            trs[[length(trs) + 1]] <- list(type="scatter", mode="markers", name=gtxt("center point"),
+                x=.fa_A(gtxt("center")), y=.fa_A(cc), marker=list(symbol="square", size=11, color=.fa_pal$center))
+        }
+        cats <- if (ctp && length(num_idx)) c(xa[1], gtxt("center"), xa[-1]) else xa
+        lay <- .fa_lay(paste(nm[a], "x", nm[b]), nm[a], gtxtf("Fitted mean of %s", fo$resp), showlegend=TRUE,
+                       legend=list(orientation="h", y=-0.25),
+                       xaxis=list(type="category", categoryorder="array", categoryarray=.fa_A(cats), title=list(text=nm[a])))
+        csv <- data.frame(expand.grid(A=xa, B=lbl, stringsAsFactors=FALSE), FittedMean=as.vector(M))
+        names(csv)[1:2] <- nm[c(a, b)]
+        .fa_ch(trs, lay, csv, paste0("interaction_", nm[a], "_", nm[b]), 400)
+    })
+    .fa_iplot(gtxtf("Interactions (Fitted Means): %s", fo$resp), charts, cols=min(2, length(charts)))
+}
+
+.fa_ip_residuals <- function(fo, sres) {
+    qq <- qqnorm(sres, plot.it=FALSE)
+    ord <- if (!is.null(fo$runorder)) order(fo$runorder) else seq_along(sres)
+    pt <- list(size=8, color=.fa_pal$line1)
+    q1 <- quantile(sres, c(0.25, 0.75)); qn <- qnorm(c(0.25, 0.75)); sl <- diff(q1) / diff(qn); ic <- q1[1] - sl * qn[1]
+    xr <- range(qq$x)
+    c1 <- .fa_ch(list(list(type="scatter", mode="markers", x=.fa_A(qq$x), y=.fa_A(qq$y), marker=pt,
+                           hovertemplate="%{x:.3f}, %{y:.3f}<extra></extra>"),
+                      list(type="scatter", mode="lines", x=.fa_A(xr), y=.fa_A(ic + sl * xr), line=list(color=.fa_pal$line2), hoverinfo="skip")),
+                 .fa_lay(gtxt("Normal probability"), gtxt("Theoretical quantile"), gtxt("Standardized residual")),
+                 data.frame(Theoretical=qq$x, StdResidual=qq$y), "resid_normal", 340)
+    c2 <- .fa_ch(list(list(type="scatter", mode="markers", x=.fa_A(fo$fitted), y=.fa_A(sres), marker=pt,
+                           hovertemplate="fit %{x:.4f}<br>resid %{y:.3f}<extra></extra>")),
+                 .fa_lay(gtxt("Versus fits"), gtxt("Fitted value"), gtxt("Standardized residual"), shapes=list(.fa_hline(0, "#666666", "dash"))),
+                 data.frame(Fitted=fo$fitted, StdResidual=sres), "resid_vs_fits", 340)
+    c3 <- .fa_ch(list(list(type="histogram", x=.fa_A(sres), marker=list(color=.fa_pal$bar, line=list(color="white", width=1)))),
+                 .fa_lay(gtxt("Histogram"), gtxt("Standardized residual"), gtxt("Frequency")),
+                 data.frame(StdResidual=sres), "resid_histogram", 340)
+    c4 <- .fa_ch(list(list(type="scatter", mode="lines+markers", x=.fa_A(seq_along(sres)), y=.fa_A(sres[ord]), marker=pt,
+                           line=list(color=.fa_pal$line1), hovertemplate="obs %{x}<br>resid %{y:.3f}<extra></extra>")),
+                 .fa_lay(gtxt("Versus order"), gtxt("Observation order"), gtxt("Standardized residual"), shapes=list(.fa_hline(0, "#666666", "dash"))),
+                 data.frame(Order=seq_along(sres), StdResidual=sres[ord]), "resid_vs_order", 340)
+    .fa_iplot(gtxtf("Residual Diagnostics: %s", fo$resp), list(c1, c2, c3, c4), cols=2)
+}
+
+.fa_ip_cube <- function(fo, fx) {
+    coding <- fo$coding; nm <- names(coding$info)
+    lv <- function(i) { z <- coding$info[[i]]; if (z$type == "numeric") c(-1, 1) else z$levels }
+    ll <- function(i) { z <- coding$info[[i]]; if (z$type == "numeric") .fa_num(z$mid + c(-1, 1) * z$half, 4) else z$levels }
+    zs <- if (length(fx) == 3) 0:1 else 0
+    cn <- expand.grid(x=0:1, y=0:1, z=zs)
+    val <- vapply(seq_len(nrow(cn)), function(e) {
+        fix <- list()
+        fix[[as.character(fx[1])]] <- lv(fx[1])[cn$x[e] + 1]
+        fix[[as.character(fx[2])]] <- lv(fx[2])[cn$y[e] + 1]
+        if (length(fx) == 3) fix[[as.character(fx[3])]] <- lv(fx[3])[cn$z[e] + 1]
+        .fa_marginal(fo, fix)
+    }, numeric(1))
+    ex <- ey <- ez <- c()
+    for (e in seq_len(nrow(cn))) for (f in seq_len(nrow(cn)))
+        if (e < f && sum(abs(unlist(cn[e, ]) - unlist(cn[f, ]))) == 1) {
+            ex <- c(ex, cn$x[e], cn$x[f], NA); ey <- c(ey, cn$y[e], cn$y[f], NA); ez <- c(ez, cn$z[e], cn$z[f], NA) }
+    txt <- .fa_num(val, 4)
+    ax <- function(i) list(title=list(text=nm[fx[i]]), tickvals=.fa_A(c(0, 1)), ticktext=.fa_A(as.character(ll(fx[i]))),
+                           range=.fa_A(c(-0.15, 1.15)), showgrid=FALSE, zeroline=FALSE, showbackground=FALSE, showspikes=FALSE)
+    csv <- data.frame(A=as.character(ll(fx[1]))[cn$x + 1], B=as.character(ll(fx[2]))[cn$y + 1], FittedMean=val, stringsAsFactors=FALSE)
+    names(csv)[1:2] <- nm[fx[1:2]]
+    if (length(fx) == 3) {
+        csv <- cbind(csv[, 1:2], C=as.character(ll(fx[3]))[cn$z + 1], FittedMean=val); names(csv)[3] <- nm[fx[3]]
+        trs <- list(list(type="scatter3d", mode="lines", x=.fa_A(ex), y=.fa_A(ey), z=.fa_A(ez), line=list(color="#888888", width=4), hoverinfo="skip"),
+                    list(type="scatter3d", mode="markers+text", x=.fa_A(cn$x), y=.fa_A(cn$y), z=.fa_A(cn$z), text=.fa_A(txt),
+                         textposition="top center", marker=list(size=6, color=.fa_pal$line1),
+                         hovertemplate=paste0(gtxt("fitted mean"), " %{text}<extra></extra>")))
+        lay <- .fa_lay(gtxtf("Cube of Fitted Means: %s", fo$resp),
+                       scene=list(xaxis=ax(1), yaxis=ax(2), zaxis=ax(3), camera=list(eye=list(x=1.6, y=-1.6, z=1.1))),
+                       margin=list(l=0, r=0, t=50, b=0))
+    } else {
+        trs <- list(list(type="scatter", mode="lines", x=.fa_A(ex), y=.fa_A(ey), line=list(color="#888888"), hoverinfo="skip"),
+                    list(type="scatter", mode="markers+text", x=.fa_A(cn$x), y=.fa_A(cn$y), text=.fa_A(txt),
+                         textposition=.fa_A(ifelse(cn$y == 1, "top center", "bottom center")),
+                         marker=list(size=11, color=.fa_pal$line1), hovertemplate="%{text}<extra></extra>"))
+        lay <- .fa_lay(gtxtf("Square of Fitted Means: %s", fo$resp),
+                       xaxis=modifyList(ax(1), list(range=.fa_A(c(-0.25, 1.25)), showbackground=NULL, showspikes=NULL)),
+                       yaxis=modifyList(ax(2), list(range=.fa_A(c(-0.25, 1.25)), showbackground=NULL, showspikes=NULL)))
+    }
+    .fa_iplot(gtxtf("Cube Plot: %s", fo$resp), list(.fa_ch(trs, lay, csv, paste0("cube_", fo$resp), 560)))
+}
+
+.fa_grid_pred <- function(fo, a, b, n, rng, base=NULL) {
+    coding <- fo$coding
+    ga <- seq(rng(a)[1], rng(a)[2], length.out=n); gb <- seq(rng(b)[1], rng(b)[2], length.out=n)
+    g <- expand.grid(ga, gb)
+    nd <- (if (is.null(base)) .fa_base_row(coding) else base)[rep(1, nrow(g)), , drop=FALSE]
+    nd[[paste0("X", a)]] <- g[[1]]; nd[[paste0("X", b)]] <- g[[2]]
+    za <- coding$info[[a]]; zb <- coding$info[[b]]
+    list(xa=za$mid + ga * za$half, xb=zb$mid + gb * zb$half, nd=nd, za=za, zb=zb, g=g)
+}
+
+.fa_ip_contours <- function(fo, pairs, surface=FALSE) {
+    rng <- function(i) { r <- range(fo$cd[[paste0("X", i)]], na.rm=TRUE); c(min(-1, r[1]), max(1, r[2])) }
+    n <- if (surface) 31 else 41
+    charts <- lapply(pairs, function(pr) {
+        a <- pr[1]; b <- pr[2]; G <- .fa_grid_pred(fo, a, b, n, rng)
+        z <- matrix(fa_predict(fo, G$nd), n, n)
+        pts_x <- G$za$mid + fo$cd[[paste0("X", a)]] * G$za$half; pts_y <- G$zb$mid + fo$cd[[paste0("X", b)]] * G$zb$half
+        if (surface) {
+            trs <- list(list(type="surface", x=.fa_A(G$xa), y=.fa_A(G$xb), z=.fa_M(t(z)), colorscale="Blues", reversescale=TRUE,
+                             colorbar=list(title=list(text=fo$resp)),
+                             contours=list(z=list(show=TRUE, usecolormap=TRUE, project=list(z=TRUE))),
+                             hovertemplate=paste0(G$za$name, " %{x:.4g}<br>", G$zb$name, " %{y:.4g}<br>", fo$resp, " %{z:.4f}<extra></extra>")))
+            lay <- .fa_lay(paste(G$za$name, "x", G$zb$name),
+                           scene=list(xaxis=list(title=list(text=G$za$name)), yaxis=list(title=list(text=G$zb$name)),
+                                      zaxis=list(title=list(text=fo$resp)), camera=list(eye=list(x=1.6, y=-1.5, z=0.9))),
+                           margin=list(l=0, r=0, t=50, b=0))
+        } else {
+            trs <- list(list(type="contour", x=.fa_A(G$xa), y=.fa_A(G$xb), z=.fa_M(t(z)), colorscale="Blues", reversescale=TRUE,
+                             contours=list(showlabels=TRUE, labelfont=list(size=10, color="#222222")),
+                             colorbar=list(title=list(text=fo$resp)),
+                             hovertemplate=paste0(G$za$name, " %{x:.4g}<br>", G$zb$name, " %{y:.4g}<br>", fo$resp, " %{z:.4f}<extra></extra>")),
+                        list(type="scatter", mode="markers", name=gtxt("design points"), x=.fa_A(pts_x), y=.fa_A(pts_y),
+                             marker=list(size=7, color="#E45756", line=list(color="white", width=1)),
+                             hovertemplate=gtxt("design point")))
+            lay <- .fa_lay(paste(G$za$name, "x", G$zb$name), G$za$name, G$zb$name)
+        }
+        csv <- data.frame(G$za$mid + G$g[[1]] * G$za$half, G$zb$mid + G$g[[2]] * G$zb$half, as.vector(z))
+        names(csv) <- c(G$za$name, G$zb$name, paste0("Fitted_", fo$resp))
+        .fa_ch(trs, lay, csv, paste0(if (surface) "surface_" else "contour_", G$za$name, "_", G$zb$name), if (surface) 480 else 420)
+    })
+    .fa_iplot(if (surface) gtxtf("Response Surfaces of Fitted %s", fo$resp) else gtxtf("Contour Plots of Fitted %s", fo$resp),
+              charts, cols=min(2, length(charts)), note=gtxt("Other factors held at their center / first level."))
+}
+
+.fa_ip_optimizer <- function(fos, pars, opt) {
+    best <- opt$solutions[[1]]; coding <- fos[[1]]$coding; info <- coding$info
+    charts <- list()
+    for (row in 0:length(fos)) for (i in seq_along(info)) {
+        z <- info[[i]]
+        if (z$type == "numeric") {
+            r <- range(unlist(lapply(fos, function(f) f$cd[[paste0("X", i)]])), na.rm=TRUE)
+            xs <- if (opt$uses_ctpt) c(-1, 1) else seq(min(-1, r[1]), max(1, r[2]), length.out=41)
+        } else xs <- z$levels
+        vals <- vapply(seq_along(xs), function(j) {
+            nd <- best$nd
+            nd <- if (z$type == "numeric") { nd[[paste0("X", i)]] <- xs[j]; nd } else .fa_set(nd, i, coding, xs[j])
+            if (opt$uses_ctpt) nd$CtPt <- 0
+            pr <- vapply(fos, function(f) fa_predict_orig(f, nd), numeric(1))
+            if (row == 0) .fa_composite(pr, pars)$D else pr[row]
+        }, numeric(1))
+        xv <- if (z$type == "numeric") z$mid + xs * z$half else as.character(xs)
+        cur <- if (z$type == "numeric") z$mid + best$xnum[match(i, opt$num)] * z$half else best$cat[[match(i, opt$cat)]]
+        ylab <- if (row == 0) gtxtf("Composite D = %s", .fa_fix(best$D, 4)) else paste0(pars[[row]]$resp, " (d = ", .fa_fix(best$d[row], 4), ")")
+        shp <- list(.fa_vline(cur, .fa_pal$center))
+        if (row > 0) { p <- pars[[row]]; for (h in na.omit(c(p$L, p$T, p$U))) shp[[length(shp) + 1]] <- .fa_hline(h, "#bbbbbb") }
+        tr <- list(type="scatter", mode=if (length(xs) > 2) "lines" else "lines+markers", x=.fa_A(xv), y=.fa_A(vals),
+                   line=list(color=if (row == 0) .fa_pal$sig else .fa_pal$line1, width=2.5),
+                   hovertemplate=paste0(z$name, " %{x}<br>%{y:.4f}<extra></extra>"))
+        lay <- .fa_lay(paste0(if (row == 0) gtxt("Composite D") else pars[[row]]$resp, "  vs  ", z$name), z$name, ylab,
+                       shapes=shp, margin=list(l=60, r=15, t=40, b=45))
+        if (row == 0) lay$yaxis$range <- .fa_A(c(0, 1.02))
+        if (z$type != "numeric") lay$xaxis$type <- "category"
+        csv <- data.frame(Setting=xv, Value=vals, stringsAsFactors=FALSE)
+        names(csv) <- c(z$name, if (row == 0) "CompositeD" else pars[[row]]$resp)
+        charts[[length(charts) + 1]] <- .fa_ch(list(tr), lay, csv, paste0("optimizer_", if (row == 0) "D" else pars[[row]]$resp, "_", z$name), 260)
+    }
+    .fa_iplot(gtxt("Optimization Profile"), charts, cols=min(4, length(info)),
+              note=gtxt("Each row varies one factor while the others stay at the optimum; the dashed line marks the optimal setting and dotted lines the response limits."))
+}
+
+.fa_ip_overlay <- function(fos, pars, opt, pairs) {
+    coding <- fos[[1]]$coding; best <- opt$solutions[[1]]
+    rng <- function(i) { r <- range(unlist(lapply(fos, function(f) f$cd[[paste0("X", i)]])), na.rm=TRUE); c(min(-1, r[1]), max(1, r[2])) }
+    cols <- c("#4C78A8", "#E45756", "#54A24B", "#B279A2", "#F58518", "#72B7B2", "#9D755D", "#BAB0AC")
+    n <- 81
+    charts <- lapply(pairs, function(pr) {
+        a <- pr[1]; b <- pr[2]; G <- .fa_grid_pred(fos[[1]], a, b, n, rng, base=best$nd)
+        if (opt$uses_ctpt) G$nd$CtPt <- 0
+        ok <- rep(TRUE, nrow(G$g)); trs <- list()
+        Z <- lapply(seq_along(fos), function(k) {
+            y <- fa_predict_orig(fos[[k]], G$nd); p <- pars[[k]]
+            lo <- if (p$goal == "minimize") -Inf else p$L; hi <- if (p$goal == "maximize") Inf else p$U
+            ok <<- ok & y >= lo & y <= hi
+            matrix(y, n, n)
+        })
+        trs[[1]] <- list(type="heatmap", x=.fa_A(G$xa), y=.fa_A(G$xb), z=.fa_M(t(matrix(as.numeric(ok), n, n))),
+                         colorscale=list(list(0, "#d9d9d9"), list(1, "#ffffff")), zmin=0, zmax=1, showscale=FALSE, hoverinfo="skip")
+        for (k in seq_along(fos)) {
+            p <- pars[[k]]; lvls <- na.omit(c(if (p$goal != "minimize") p$L, if (p$goal != "maximize") p$U))
+            for (h in lvls) trs[[length(trs) + 1]] <- list(type="contour", x=.fa_A(G$xa), y=.fa_A(G$xb), z=.fa_M(t(Z[[k]])),
+                name=paste0(fos[[k]]$resp, " = ", .fa_num(h, 4)), showscale=FALSE, autocontour=FALSE,
+                contours=list(start=h, end=h, size=1, coloring="lines", showlabels=TRUE),
+                line=list(color=cols[(k - 1) %% 8 + 1], width=2.5),
+                colorscale=list(list(0, cols[(k - 1) %% 8 + 1]), list(1, cols[(k - 1) %% 8 + 1])),
+                hovertemplate=paste0(fos[[k]]$resp, " %{z:.4f}<extra></extra>"), showlegend=TRUE)
+        }
+        trs[[length(trs) + 1]] <- list(type="scatter", mode="markers", name=gtxt("optimal setting"),
+            x=.fa_A(G$za$mid + best$xnum[match(a, opt$num)] * G$za$half), y=.fa_A(G$zb$mid + best$xnum[match(b, opt$num)] * G$zb$half),
+            marker=list(symbol="x", size=14, color="#000000"))
+        lay <- .fa_lay(paste(G$za$name, "x", G$zb$name), G$za$name, G$zb$name, showlegend=TRUE, legend=list(orientation="h", y=-0.2))
+        csv <- data.frame(G$za$mid + G$g[[1]] * G$za$half, G$zb$mid + G$g[[2]] * G$zb$half, AllWithinLimits=ok)
+        names(csv)[1:2] <- c(G$za$name, G$zb$name)
+        for (k in seq_along(fos)) csv[[fos[[k]]$resp]] <- as.vector(Z[[k]])
+        .fa_ch(trs, lay, csv, paste0("overlay_", G$za$name, "_", G$zb$name), 480)
+    })
+    .fa_iplot(gtxt("Overlaid Contour Plot"), charts, cols=min(2, length(charts)),
+              note=gtxt("White = every response within its limits; x = optimal setting (other factors at the optimum)."))
+}
+
+.fa_ip_taguchi <- function(factors, lv, tab, what, gmv, snlab) {
+    all <- unlist(tab$means); yr <- range(all, na.rm=TRUE); yr <- yr + c(-0.08, 0.08) * diff(yr)
+    yl <- if (what == "sn") gtxt("Mean of S/N ratios") else gtxt("Mean of means")
+    charts <- lapply(seq_along(factors), function(j) {
+        m <- tab$means[[j]]
+        tr <- list(type="scatter", mode="lines+markers", x=.fa_A(as.character(lv[[j]])), y=.fa_A(m),
+                   line=list(color=if (what == "sn") .fa_pal$sig else .fa_pal$line1, width=2.5), marker=list(size=9),
+                   hovertemplate=paste0(factors[j], " = %{x}<br>%{y:.4f}<extra></extra>"))
+        lay <- .fa_lay(factors[j], factors[j], yl, xaxis=list(type="category", title=list(text=factors[j])),
+                       yaxis=list(range=.fa_A(yr), title=list(text=yl), gridcolor="#e6e6e6"), shapes=list(.fa_hline(gmv)))
+        csv <- data.frame(Factor=factors[j], Level=as.character(lv[[j]]), Mean=as.numeric(m), stringsAsFactors=FALSE)
+        .fa_ch(list(tr), lay, csv, paste0("taguchi_", what, "_", factors[j]), 320)
+    })
+    .fa_iplot(if (what == "sn") gtxtf("Main Effects for S/N Ratios (%s)", snlab) else gtxt("Main Effects for Means"),
+              charts, cols=min(3, length(charts)), note=gtxt("Dotted line = overall mean."))
+}
+
+.fa_ip_mix_trace <- function(mo, curves) {
+    cols <- c("#4C78A8", "#E45756", "#54A24B", "#B279A2", "#F58518", "#72B7B2", "#9D755D", "#BAB0AC", "#EECA3B", "#FF9DA6", "#9ECAE9", "#6F4E7C")
+    trs <- lapply(seq_along(curves), function(i) list(type="scatter", mode="lines", name=mo$comps[i],
+        x=.fa_A(curves[[i]]$x), y=.fa_A(curves[[i]]$y), line=list(color=cols[(i - 1) %% 12 + 1], width=2.5),
+        hovertemplate=paste0(mo$comps[i], "<br>", gtxt("deviation"), " %{x:.4f}<br>%{y:.4f}<extra></extra>")))
+    lay <- .fa_lay(gtxtf("Response Trace: %s", mo$resp), gtxt("Deviation from reference blend (component proportion, Cox direction)"),
+                   gtxtf("Fitted %s", mo$resp), showlegend=TRUE, shapes=list(.fa_vline(0, "#999999", "dot")))
+    csv <- do.call(rbind, lapply(seq_along(curves), function(i)
+        data.frame(Component=mo$comps[i], Deviation=curves[[i]]$x, Fitted=curves[[i]]$y, stringsAsFactors=FALSE)))
+    .fa_iplot(gtxtf("Response Trace: %s", mo$resp), list(.fa_ch(trs, lay, csv, paste0("trace_", mo$resp), 460)))
+}
+
+.fa_ip_mix_ternary <- function(mo, gx, gy, Z, labs, dp) {
+    tri <- list(type="scatter", mode="lines", x=.fa_A(c(0, 1, 0.5, 0)), y=.fa_A(c(0, 0, sqrt(3) / 2, 0)),
+                line=list(color="#000000", width=2), hoverinfo="skip")
+    # recover the three proportions for hover from the triangle coordinates
+    b3 <- outer(rep(1, length(gx)), gy / (sqrt(3) / 2)); b2 <- outer(gx, rep(1, length(gy))) - b3 / 2; b1 <- 1 - b2 - b3
+    cd <- array(c(b1, b2, b3), c(length(gx), length(gy), 3)); cd <- aperm(cd, c(2, 1, 3))
+    trs <- list(list(type="contour", x=.fa_A(gx), y=.fa_A(gy), z=.fa_M(t(Z)), colorscale="Blues", reversescale=TRUE,
+                     connectgaps=FALSE, contours=list(showlabels=TRUE), colorbar=list(title=list(text=mo$resp)),
+                     customdata=I(cd),
+                     hovertemplate=paste0(labs[1], " %{customdata[0]:.3f}<br>", labs[2], " %{customdata[1]:.3f}<br>", labs[3],
+                                          " %{customdata[2]:.3f}<br>", mo$resp, " %{z:.4f}<extra></extra>")),
+                tri,
+                list(type="scatter", mode="markers", x=.fa_A(dp[, 2] + dp[, 3] / 2), y=.fa_A(dp[, 3] * sqrt(3) / 2),
+                     marker=list(size=8, color="#E45756"), hovertemplate=gtxt("design point")))
+    lay <- .fa_lay(gtxtf("Mixture Contours: %s", mo$resp),
+                   xaxis=list(visible=FALSE, range=.fa_A(c(-0.08, 1.08))),
+                   yaxis=list(visible=FALSE, scaleanchor="x", range=.fa_A(c(-0.1, 0.95))),
+                   annotations=list(list(x=0, y=-0.05, text=labs[1], showarrow=FALSE, xref="x", yref="y"),
+                                    list(x=1, y=-0.05, text=labs[2], showarrow=FALSE, xref="x", yref="y"),
+                                    list(x=0.5, y=sqrt(3) / 2 + 0.05, text=labs[3], showarrow=FALSE, xref="x", yref="y")))
+    g <- expand.grid(x=gx, y=gy); keep <- is.finite(as.vector(Z))
+    csv <- data.frame(b1=as.vector(b1)[keep], b2=as.vector(b2)[keep], b3=as.vector(b3)[keep], Fitted=as.vector(Z)[keep])
+    names(csv)[1:3] <- labs
+    .fa_iplot(gtxtf("Mixture Contour Plot: %s", mo$resp), list(.fa_ch(trs, lay, csv, paste0("ternary_", mo$resp), 560)))
+}
+
+# ── Writes the interactive chart report ──────────────────────────────────────
+.fa_plotly_js <- function() {
+    d <- tryCatch(system.file("htmlwidgets", "lib", "plotlyjs", package="plotly"), error=function(e) "")
+    f <- if (nzchar(d)) list.files(d, pattern="^plotly.*min\\.js$", full.names=TRUE) else character(0)
+    if (length(f)) {
+        js <- tryCatch(paste(readLines(f[1], warn=FALSE, encoding="UTF-8"), collapse="\n"), error=function(e) NULL)
+        if (!is.null(js)) return(paste0("<script>", gsub("</script", "<\\/script", js, fixed=TRUE), "</script>"))
+    }
+    "<script src=\"https://cdn.plot.ly/plotly-2.27.0.min.js\"></script>"
+}
+.fa_json <- function(x) gsub("</", "<\\/", as.character(jsonlite::toJSON(x, auto_unbox=TRUE, digits=NA, null="null", na="null", force=TRUE, rownames=FALSE)), fixed=TRUE)
+
+.fa_report_js <- '
+function doeCsv(rows){ if(!rows||!rows.length) return ""; var k=Object.keys(rows[0]);
+  var esc=function(v){ if(v===null||v===undefined) return ""; var s=String(v); return /[",\\n]/.test(s)?"\\""+s.replace(/"/g,"\\"\\"")+"\\"":s; };
+  return [k.map(esc).join(",")].concat(rows.map(function(r){return k.map(function(c){return esc(r[c]);}).join(",");})).join("\\n"); }
+function doeSave(text,name,type){ var b=new Blob([text],{type:type}); var a=document.createElement("a");
+  a.href=URL.createObjectURL(b); a.download=name; document.body.appendChild(a); a.click(); setTimeout(function(){URL.revokeObjectURL(a.href); a.remove();},500); }
+function doeFlip(gd){ if(gd.layout.scene||gd.layout.xaxis2) return;
+  var d=gd.data.map(function(t){ var n=Object.assign({},t);
+    if(n.type==="contour"||n.type==="heatmap"||n.type==="surface") return t;
+    if(n.type==="histogram"){ if(n.x!==undefined){n.y=n.x; delete n.x;} else {n.x=n.y; delete n.y;} return n; }
+    var tx=n.x; n.x=n.y; n.y=tx; if(n.type==="bar") n.orientation=(n.orientation==="h")?"v":"h"; return n; });
+  var L=Object.assign({},gd.layout), xa=L.xaxis||{}, ya=L.yaxis||{}; L.xaxis=Object.assign({},ya); L.yaxis=Object.assign({},xa);
+  (L.shapes||[]).forEach(function(s){ var t; t=s.xref; s.xref=s.yref; s.yref=t; t=s.x0; s.x0=s.y0; s.y0=t; t=s.x1; s.x1=s.y1; s.y1=t; });
+  Plotly.react(gd,d,L); }
+var DOE_THEMES={ light:{paper_bgcolor:"#ffffff",plot_bgcolor:"#ffffff",font:{color:"#222222"},grid:"#e6e6e6"},
+  dark:{paper_bgcolor:"#1e2127",plot_bgcolor:"#1e2127",font:{color:"#e6e6e6"},grid:"#3a3f48"},
+  print:{paper_bgcolor:"#ffffff",plot_bgcolor:"#f7f7f7",font:{color:"#000000"},grid:"#cccccc"} };
+function doeTheme(name){ var t=DOE_THEMES[name]; document.body.className="t-"+name;
+  document.querySelectorAll(".doe-chart").forEach(function(gd){ if(!gd.layout) return;
+    var u={paper_bgcolor:t.paper_bgcolor,plot_bgcolor:t.plot_bgcolor,"font.color":t.font.color,"xaxis.gridcolor":t.grid,"yaxis.gridcolor":t.grid};
+    if(gd.layout.scene){ u["scene.xaxis.gridcolor"]=t.grid; u["scene.yaxis.gridcolor"]=t.grid; u["scene.zaxis.gridcolor"]=t.grid; }
+    Plotly.relayout(gd,u); }); }
+function doeFont(delta){ document.querySelectorAll(".doe-chart").forEach(function(gd){ if(!gd.layout) return;
+  var s=((gd.layout.font&&gd.layout.font.size)||12)+delta; if(s<8) s=8; Plotly.relayout(gd,{"font.size":s}); }); }
+function doePlot(id,data,layout,csv,name){
+  var cfg={editable:true,responsive:true,displaylogo:false,scrollZoom:false,
+    edits:{titleText:true,axisTitleText:true,legendText:true,legendPosition:true,annotationText:true,annotationPosition:true,colorbarTitleText:true,colorbarPosition:true,shapePosition:false},
+    toImageButtonOptions:{format:"png",filename:name,scale:2},
+    modeBarButtonsToAdd:[
+      {name:"svg",title:"Download as SVG (vector, for papers/slides)",icon:Plotly.Icons.disk,click:function(gd){Plotly.downloadImage(gd,{format:"svg",filename:name});}},
+      {name:"csv",title:"Download the chart data (CSV)",icon:{width:24,height:24,path:"M2 2h20v5H2z M2 9h6v5H2z M9 9h6v5H9z M16 9h6v5h-6z M2 16h6v6H2z M9 16h6v6H9z M16 16h6v6h-6z"},click:function(){doeSave(doeCsv(csv),name+".csv","text/csv");}},
+      {name:"flip",title:"Flip orientation (swap X and Y)",icon:Plotly.Icons.autoscale,click:function(gd){doeFlip(gd);}}]};
+  Plotly.newPlot(id,data,layout,cfg).then(function(gd){ gd.classList.add("doe-chart"); var cur=document.body.className.replace("t-","");
+    if(cur&&cur!=="light") doeTheme(cur);
+    var gp=document.getElementById("doe-global-pal"); if(gp&&gp.value&&gp.value!=="standard") doePalette(gd,gp.value); }); }
+var DOE_PAL={
+  standard:{label:"Standard",c:["#4C78A8","#E45756","#B279A2","#F58518","#54A24B","#72B7B2","#9D755D","#BAB0AC","#EECA3B","#FF9DA6","#9ECAE9","#6F4E7C"],scale:"Blues",rev:true},
+  colorblind:{label:"Colour-blind safe",c:["#0072B2","#D55E00","#CC79A7","#E69F00","#009E73","#56B4E9","#F0E442","#999999","#000000","#E69F00","#56B4E9","#CC79A7"],scale:"Cividis",rev:false},
+  vivid:{label:"Vivid",c:["#1F77B4","#D62728","#9467BD","#FF7F0E","#2CA02C","#17BECF","#8C564B","#7F7F7F","#BCBD22","#E377C2","#AEC7E8","#98DF8A"],scale:"Viridis",rev:false},
+  soft:{label:"Soft / pastel",c:["#7EA6D8","#F08A8A","#C3A3D6","#F7BE7A","#94CC8E","#8FD0CB","#C7AE9A","#CFCAC4","#EFD77E","#FFB8C4","#B9D7EF","#B7A5C9"],scale:"YlGnBu",rev:true},
+  earth:{label:"Earth",c:["#33658A","#A23B2A","#86608E","#D98E04","#5B8C5A","#2F8F9D","#7A5C3E","#A9A18C","#C9A227","#C97B84","#86BBD8","#5D4E6D"],scale:"Earth",rev:false},
+  warm:{label:"Warm",c:["#B2182B","#2166AC","#E08214","#D6604D","#8C510A","#F4A582","#762A83","#BF812D","#FDB863","#DE77AE","#92C5DE","#5AAE61"],scale:"YlOrRd",rev:true},
+  mono:{label:"Grayscale (print)",c:["#8C8C8C","#000000","#595959","#404040","#B3B3B3","#262626","#737373","#A6A6A6","#4D4D4D","#1A1A1A","#C4C4C4","#6B6B6B"],scale:"Greys",rev:true}};
+var DOE_SCALES=["Blues","Cividis","Viridis","YlGnBu","Earth","YlOrRd","Greys"];
+function doeWalk(o,map){ if(Array.isArray(o)) return o.map(function(v){return doeWalk(v,map);});
+  if(o&&typeof o==="object"){ var n={}; for(var k in o){ if(k==="x"||k==="y"||k==="z"||k==="customdata"||k==="text"||k==="dimensions") n[k]=o[k]; else n[k]=doeWalk(o[k],map);} return n; }
+  if(typeof o==="string"){ var u=o.toUpperCase(); if(map[u]) return map[u]; } return o; }
+function doePalette(gd,name){ if(!gd||!gd.data) return; var from=DOE_PAL[gd.__pal||"standard"], to=DOE_PAL[name]; if(!to) return;
+  var map={}; from.c.forEach(function(c,i){ if(!map[c.toUpperCase()]) map[c.toUpperCase()]=to.c[i]; });
+  var d=doeWalk(gd.data,map); d.forEach(function(t){ if(typeof t.colorscale==="string"&&DOE_SCALES.indexOf(t.colorscale)>=0){ t.colorscale=to.scale; t.reversescale=to.rev; } });
+  var L=Object.assign({},gd.layout); if(L.shapes) L.shapes=doeWalk(L.shapes,map); if(L.annotations) L.annotations=doeWalk(L.annotations,map);
+  gd.__pal=name; Plotly.react(gd,d,L); var s=document.querySelector("select[data-for=\\""+gd.id+"\\"]"); if(s) s.value=name; }
+function doePaletteAll(name){ document.querySelectorAll(".doe-chart").forEach(function(gd){ doePalette(gd,name); }); }
+function doePalOptions(){ var h=""; for(var k in DOE_PAL) h+="<option value=\\""+k+"\\">"+DOE_PAL[k].label+"</option>"; return h; }
+document.addEventListener("DOMContentLoaded",function(){ document.querySelectorAll("select.doe-pal").forEach(function(s){ s.innerHTML=doePalOptions(); }); });
+window.addEventListener("load",function(){ document.querySelectorAll(".doe-chart").forEach(function(gd){ try{Plotly.Plots.resize(gd);}catch(e){} }); });
+'
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# RESIDUAL CHECKS, PREDICTION AT NEW SETTINGS, PLAIN-LANGUAGE SUMMARIES
+# ════════════════════════════════════════════════════════════════════════════
+
+# Anderson-Darling normality test (estimated mean and SD; Stephens /
+# D'Agostino small-sample correction and p-value approximation).
+fa_ad_test <- function(x) {
+    x <- sort(x[is.finite(x)]); n <- length(x)
+    if (n < 8 || sd(x) <= 0) return(NULL)
+    z <- pnorm((x - mean(x)) / sd(x))
+    z <- pmin(pmax(z, 1e-15), 1 - 1e-15)
+    i <- seq_len(n)
+    A <- -n - mean((2 * i - 1) * (log(z) + log(1 - rev(z))))
+    AA <- A * (1 + 0.75 / n + 2.25 / n^2)
+    p <- if (AA < 0.2) 1 - exp(-13.436 + 101.14 * AA - 223.73 * AA^2)
+         else if (AA < 0.34) 1 - exp(-8.318 + 42.796 * AA - 59.938 * AA^2)
+         else if (AA < 0.6) exp(0.9177 - 4.279 * AA - 1.38 * AA^2)
+         else exp(1.2937 - 5.709 * AA + 0.0186 * AA^2)
+    list(A=A, p=min(1, max(0, p)))
+}
+
+# Residual checks for a fitted coded model: normality, independence in run
+# order (Durbin-Watson) and influence (Cook's distance).
+fa_resid_checks <- function(fo) {
+    if (is.null(fo$df_error) || fo$df_error < 1 || !is.finite(fo$s) || fo$s <= 0) return(NULL)
+    sres <- fo$resid / (fo$s * sqrt(pmax(1e-12, 1 - fo$hat)))
+    p <- ncol(fo$X)
+    cook <- sres^2 / p * fo$hat / pmax(1e-12, 1 - fo$hat)
+    ord <- if (!is.null(fo$runorder) && all(is.finite(fo$runorder))) order(fo$runorder) else seq_along(fo$resid)
+    e <- fo$resid[ord]
+    dw <- if (length(e) >= 4 && sum(e^2) > 0) sum(diff(e)^2) / sum(e^2) else NA_real_
+    list(ad=fa_ad_test(fo$resid), dw=dw, dw_runorder=!is.null(fo$runorder),
+         cook=cook, cook_max=max(cook), cook_row=fo$rows[which.max(cook)],
+         n_big=sum(abs(sres) > 2), sres=sres, n_cook=sum(cook > 4 / fo$n & cook > 0.5))
+}
+
+fa_display_residchecks <- function(fo, rc) {
+    if (is.null(rc)) return(invisible(NULL))
+    rows <- list(); labs <- character(0)
+    add <- function(lab, stat, crit, concl) {
+        labs <<- c(labs, lab)
+        rows[[length(rows) + 1]] <<- data.frame(stat, crit, concl, stringsAsFactors=FALSE)
+    }
+    if (!is.null(rc$ad))
+        add(gtxt("Normality (Anderson-Darling)"), .fa_fix(rc$ad$A, 3), gtxtf("Sig. = %s", .fa_pv(rc$ad$p)),
+            if (rc$ad$p < 0.05) gtxt("Residuals are not normal (Sig. < 0.05): p-values may be inaccurate; consider Box-Cox.")
+            else gtxt("No evidence against normal residuals."))
+    if (is.finite(rc$dw))
+        add(gtxt("Independence (Durbin-Watson)"), .fa_fix(rc$dw, 3), gtxt("about 2 = independent"),
+            if (rc$dw < 1.4) gtxt("Neighbouring runs are positively correlated: look for a drift or time trend.")
+            else if (rc$dw > 2.6) gtxt("Neighbouring runs alternate (negative correlation).")
+            else gtxt("No sign of correlation between neighbouring runs."))
+    add(gtxt("Influence (Cook's distance)"), .fa_fix(rc$cook_max, 3), gtxt("above 1 = influential"),
+        if (rc$cook_max > 1) gtxtf("Run in row %d strongly changes the fit; check it for errors.", rc$cook_row)
+        else if (rc$cook_max > 0.5) gtxtf("Run in row %d has a noticeable pull on the fit.", rc$cook_row)
+        else gtxt("No single run dominates the fit."))
+    df <- do.call(rbind, rows)
+    names(df) <- c(gtxt("Statistic"), gtxt("Reference"), gtxt("Conclusion"))
+    .fa_show(df, gtxtf("Residual Checks: %s", fo$resp), "DOERESIDCHECK", outline=gtxt("Residual Checks"),
+             rowlabels=labs,
+             caption=paste0(gtxt("Checks on the residuals (observed minus fitted). "),
+                            if (isTRUE(rc$dw_runorder)) gtxt("Durbin-Watson uses the RunOrder column.")
+                            else gtxt("Durbin-Watson uses the row order of the data (no RunOrder column).")))
+}
+
+# ── Prediction at user-specified settings ────────────────────────────────────
+# spec: "Bentonite=AC BentRatio=10.5 ...; Bentonite=WYO ..." (names or letters;
+# omitted numeric factors -> center, omitted text factors -> first level)
+fa_parse_predict <- function(spec, coding, warns) {
+    s <- paste(as.character(unlist(spec)), collapse=" ")
+    s <- trimws(s); if (!nzchar(s)) return(list())
+    pts <- trimws(unlist(strsplit(s, ";", fixed=TRUE))); pts <- pts[nzchar(pts)]
+    info <- coding$info; nm <- names(info); lt <- fa_letters(length(info))
+    lapply(pts, function(pt) {
+        pr <- .fa_parse_pairs(pt)
+        vals <- vector("list", length(info))
+        for (k in names(pr)) {
+            i <- match(tolower(k), tolower(nm)); if (is.na(i)) i <- match(toupper(k), lt)
+            if (is.na(i)) { warns$warn(gtxtf("PREDICT: '%s' is not a factor name or letter code; ignored.", k), dostop=FALSE); next }
+            z <- info[[i]]
+            if (z$type == "numeric") {
+                v <- suppressWarnings(as.numeric(pr[[k]]))
+                if (!is.finite(v)) { warns$warn(gtxtf("PREDICT: value for '%s' is not numeric; its center was used.", k), dostop=FALSE); next }
+                vals[[i]] <- v
+            } else {
+                m <- match(tolower(pr[[k]]), tolower(z$levels))
+                if (is.na(m)) { warns$warn(gtxtf("PREDICT: '%s' is not a level of %s; the first level was used.", pr[[k]], z$name), dostop=FALSE); next }
+                vals[[i]] <- z$levels[m]
+            }
+        }
+        for (i in seq_along(info)) if (is.null(vals[[i]]))
+            vals[[i]] <- if (info[[i]]$type == "numeric") info[[i]]$mid else info[[i]]$levels[1]
+        vals
+    })
+}
+
+fa_display_predict <- function(fo, pts, conf=0.95) {
+    if (!length(pts)) return(invisible(NULL))
+    coding <- fo$coding; info <- coding$info
+    has_ct <- .fa_has_ctpt(fo)
+    rows <- lapply(pts, function(vals) {
+        nd <- .fa_base_row(coding)
+        outside <- FALSE; atcenter <- TRUE; corner <- TRUE
+        for (i in seq_along(info)) {
+            z <- info[[i]]
+            if (z$type == "numeric") {
+                x <- (vals[[i]] - z$mid) / z$half
+                r <- range(fo$cd[[paste0("X", i)]], na.rm=TRUE)
+                if (x < min(-1, r[1]) - 1e-9 || x > max(1, r[2]) + 1e-9) outside <- TRUE
+                if (abs(x) > 1e-9) atcenter <- FALSE
+                if (abs(abs(x) - 1) > 1e-9) corner <- FALSE
+                nd[[paste0("X", i)]] <- x
+            } else nd <- .fa_set(nd, i, coding, vals[[i]])
+        }
+        nd$CtPt <- if (has_ct && atcenter && any(vapply(info, function(z) z$type == "numeric", logical(1)))) 1 else 0
+        ps <- fa_predict(fo, nd, se=TRUE)
+        fit <- ps$fit
+        if (fo$df_error > 0) {
+            tq <- qt(1 - (1 - conf) / 2, fo$df_error)
+            ci <- fit + c(-1, 1) * tq * ps$se
+            pi <- fit + c(-1, 1) * tq * sqrt(ps$se^2 + fo$mse)
+        } else { ci <- pi <- c(NA, NA) }
+        u <- function(v) sort(fa_untransform(fo, v))
+        note <- c(if (outside) gtxt("outside the tested range (extrapolation)"),
+                  if (has_ct && !atcenter && !corner) gtxt("curvature term assumed 0 away from the center"))
+        data.frame(Settings=paste(vapply(seq_along(info), function(i)
+                       paste0(info[[i]]$name, "=", if (is.numeric(vals[[i]])) .fa_num(vals[[i]], 6) else vals[[i]]), character(1)), collapse=", "),
+                   Fit=.fa_num(fa_untransform(fo, fit), 5),
+                   SE=if (is.finite(fo$lambda)) "" else .fa_num(ps$se, 4),
+                   CI=if (all(is.finite(ci))) paste0("(", paste(.fa_num(u(ci), 5), collapse=", "), ")") else "",
+                   PI=if (all(is.finite(pi))) paste0("(", paste(.fa_num(u(pi), 5), collapse=", "), ")") else "",
+                   Note=paste(note, collapse="; "), stringsAsFactors=FALSE)
+    })
+    df <- do.call(rbind, rows)
+    pc <- format(100 * conf)
+    names(df) <- c(gtxt("Settings"), gtxt("Fit"), gtxt("SE Fit"), gtxtf("%s%% CI (mean)", pc), gtxtf("%s%% PI (single run)", pc), gtxt("Note"))
+    .fa_show(df[, -1, drop=FALSE], gtxtf("Prediction: %s", fo$resp), "DOEPREDICT", outline=gtxt("Prediction"),
+             rowlabels=df[[1]],
+             caption=gtxt("CI = interval for the average response at these settings; PI = interval for one new run. Factors not listed are at their center (numeric) or first level (text)."))
+}
+
+# ── Plain-language summary ──────────────────────────────────────────────────
+.fa_pctx <- function(x) if (is.na(x)) "-" else paste0(formatC(100 * x, format="f", digits=1), "%")
+.fa_listx <- function(v, max=6) {
+    if (!length(v)) return("")
+    if (length(v) > max) v <- c(v[seq_len(max)], gtxtf("and %d more", length(v) - max))
+    paste(v, collapse=", ")
+}
+
+fa_interpret <- function(fo, rc=NULL) {
+    lines <- list()
+    add <- function(k, txt) lines[[length(lines) + 1]] <<- c(k, txt)
+    sm <- fa_summary_df(fo); a <- fo$alpha; coding <- fo$coding
+    tr <- if (is.finite(fo$lambda)) gtxtf(" (on the Box-Cox scale, lambda = %s)", format(fo$lambda)) else ""
+    # overall model
+    an <- fa_anova_df(fo)
+    pm <- an$P[1]
+    if (fo$df_error > 0 && is.finite(pm))
+        add(gtxt("Overall"), if (pm < a) gtxtf("The model is statistically significant (Sig. %s): the factors explain real changes in %s%s.", .fa_pv(pm), fo$resp, tr)
+                             else gtxtf("The model is not statistically significant (Sig. %s): the factors studied do not clearly change %s at alpha = %s.", .fa_pv(pm), fo$resp, format(a)))
+    # fit quality
+    fitq <- gtxtf("The model explains %s of the variation in %s (adjusted %s).", .fa_pctx(sm$R2), fo$resp, .fa_pctx(sm$R2adj))
+    if (!is.na(sm$R2pred)) {
+        fitq <- paste(fitq, if (sm$R2pred >= 0.7) gtxtf("Predicted R-squared %s: it should predict new runs well.", .fa_pctx(sm$R2pred))
+                            else if (sm$R2pred >= 0.4) gtxtf("Predicted R-squared %s: predictions of new runs are only moderately reliable.", .fa_pctx(sm$R2pred))
+                            else gtxtf("Predicted R-squared %s: the model predicts new runs poorly; treat predictions with caution.", .fa_pctx(sm$R2pred)))
+        if (is.finite(sm$R2) && sm$R2 - sm$R2pred > 0.25)
+            fitq <- paste(fitq, gtxt("The large gap to R-squared suggests too many terms for the data (over-fitting)."))
+    }
+    add(gtxt("Model fit"), fitq)
+    # significant terms
+    idx <- which(!vapply(fo$terms, identical, logical(1), "CTPT"))
+    if (length(idx)) {
+        labs <- vapply(fo$terms[idx], fa_term_label, character(1), coding=coding)
+        if (fo$df_error > 0) {
+            pv <- vapply(idx, function(i) fa_term_test(fo, i)$p, numeric(1))
+            sig <- which(pv < a); o <- sig[order(pv[sig])]
+            ns <- setdiff(seq_along(idx), sig)
+            txt <- gtxtf("%d of %d terms are significant at alpha = %s", length(sig), length(idx), format(a))
+            txt <- paste0(txt, if (length(sig)) paste0(": ", .fa_listx(labs[o]), gtxt(" (strongest first).")) else ".")
+            if (length(ns)) txt <- paste(txt, gtxtf("Not significant: %s.", .fa_listx(labs[ns])))
+            add(gtxt("Significant terms"), txt)
+        } else {
+            se <- fa_std_effects(fo)
+            if (!is.null(se)) {
+                s <- which(abs(se$t) > se$crit); o <- s[order(-abs(se$t[s]))]
+                add(gtxt("Significant terms"), gtxtf("No error degrees of freedom, so terms were judged with Lenth's method: %d of %d stand out%s.",
+                    length(s), length(se$t), if (length(s)) paste0(": ", .fa_listx(se$label[o])) else ""))
+            }
+        }
+    }
+    # direction of the largest main effects (two-level coding)
+    if (coding$kind == "factorial") {
+        mains <- which(vapply(fo$terms, function(t) !identical(t, "CTPT") && length(t) == 1, logical(1)))
+        ii <- which(vapply(fo$terms, function(t) !identical(t, "CTPT") && length(t) >= 2 && !.fa_is_square(t), logical(1)))
+        if (fo$df_error > 0) ii <- ii[vapply(ii, function(k) isTRUE(fa_term_test(fo, k)$p < a), logical(1))]
+        ints <- fo$terms[ii]
+        ef <- list()
+        for (ti in mains) {
+            j <- which(fo$assign == ti); if (length(j) != 1) next
+            i <- fo$terms[[ti]]; z <- coding$info[[i]]
+            sigok <- if (fo$df_error > 0) fa_term_test(fo, ti)$p < a else TRUE
+            if (!sigok) next
+            lohi <- if (z$type == "numeric") c(.fa_num(z$low, 4), .fa_num(z$high, 4)) else z$levels[1:2]
+            dep <- unique(unlist(lapply(Filter(function(t) i %in% t, ints), function(t) setdiff(t, i))))
+            dep <- if (length(dep)) gtxtf(" (the size depends on %s: see the interaction plot)", paste(names(coding$info)[dep], collapse=", ")) else ""
+            ef[[length(ef) + 1]] <- list(v=2 * fo$coef[j], txt=gtxtf("%s from %s to %s %s %s by %s%s", z$name, lohi[1], lohi[2],
+                gtxt("changes"), fo$resp, .fa_num(2 * fo$coef[j], 4), dep))
+        }
+        if (length(ef)) {
+            o <- order(-abs(vapply(ef, `[[`, numeric(1), "v")))[seq_len(min(3, length(ef)))]
+            add(gtxt("Largest effects"), paste0(gtxt("Averaged over the other factors: "),
+                paste(vapply(ef[o], `[[`, character(1), "txt"), collapse="; "), "."))
+        }
+    }
+    # curvature
+    if (.fa_has_ctpt(fo) && fo$df_error > 0) {
+        ct <- which(vapply(fo$terms, identical, logical(1), "CTPT"))
+        pc <- fa_term_test(fo, ct)$p
+        add(gtxt("Curvature"), if (is.finite(pc) && pc < a)
+            gtxtf("The center points differ from the corners (Sig. %s): the response curves inside the region. A response surface design (e.g. augment to a central composite) is needed to model it.", .fa_pv(pc))
+            else gtxtf("No significant curvature (Sig. %s): a straight-line (first-order) model is adequate in this region.", .fa_pv(pc)))
+    }
+    # lack of fit
+    lof <- an[trimws(an$Source) == trimws(gtxt("  Lack-of-Fit")), , drop=FALSE]
+    if (nrow(lof) && is.finite(lof$P[1]))
+        add(gtxt("Lack of fit"), if (lof$P[1] < a) gtxtf("Significant lack of fit (Sig. %s): the model misses something real; consider adding terms or a transformation.", .fa_pv(lof$P[1]))
+                                  else gtxtf("No evidence of lack of fit (Sig. %s).", .fa_pv(lof$P[1])))
+    # residuals
+    if (!is.null(rc)) {
+        bits <- character(0)
+        if (!is.null(rc$ad)) bits <- c(bits, if (rc$ad$p < 0.05) gtxtf("not normal (Anderson-Darling Sig. %s)", .fa_pv(rc$ad$p))
+                                              else gtxtf("consistent with a normal distribution (Anderson-Darling Sig. %s)", .fa_pv(rc$ad$p)))
+        if (rc$n_big > 0) bits <- c(bits, gtxtf("%d run(s) with a large standardized residual (> 2)", rc$n_big))
+        if (is.finite(rc$dw) && (rc$dw < 1.4 || rc$dw > 2.6)) bits <- c(bits, gtxtf("possible run-order pattern (Durbin-Watson %s)", .fa_fix(rc$dw, 2)))
+        if (rc$cook_max > 1) bits <- c(bits, gtxtf("row %d is highly influential (Cook's D %s)", rc$cook_row, .fa_fix(rc$cook_max, 2)))
+        if (length(bits)) add(gtxt("Residuals"), paste0(gtxt("Residuals are "), paste(bits, collapse="; "), "."))
+    }
+    # cautions
+    cau <- character(0)
+    if (fo$df_error > 0 && fo$df_error < 3) cau <- c(cau, gtxtf("Only %d error degree(s) of freedom: tests have little power; small real effects can look non-significant.", fo$df_error))
+    if (any(is.finite(fo$vif) & fo$vif > 5)) cau <- c(cau, gtxt("Some terms are correlated (VIF > 5): their coefficients are less precise."))
+    if (length(fo$removed)) cau <- c(cau, gtxtf("Aliased terms were removed: %s.", paste(fo$removed, collapse=", ")))
+    if (length(cau)) add(gtxt("Caution"), paste(cau, collapse=" "))
+    lines
+}
+
+.fa_show_interpret <- function(lines, title, omsid="DOEINTERPRET") {
+    if (!length(lines)) return(invisible(NULL))
+    df <- data.frame(vapply(lines, `[`, character(1), 2), stringsAsFactors=FALSE)
+    names(df) <- gtxt("Finding")
+    .fa_show(df, title, omsid, outline=gtxt("Summary of Results"),
+             rowlabels=vapply(lines, `[`, character(1), 1),
+             caption=gtxt("Plain-language reading of the tables below. Decisions use the alpha level shown; check the charts before acting."))
+}
+
+fa_interpret_mixture <- function(mo, alpha=0.05) {
+    lines <- list(); add <- function(k, txt) lines[[length(lines) + 1]] <<- c(k, txt)
+    r2 <- 1 - mo$sse / mo$sst
+    pr <- if (is.finite(mo$press)) max(0, 1 - mo$press / mo$sst) else NA
+    add(gtxt("Model fit"), gtxtf("The blend model explains %s of the variation in %s%s.", .fa_pctx(r2), mo$resp,
+        if (!is.na(pr)) gtxtf("; predicted R-squared %s", .fa_pctx(pr)) else ""))
+    an <- fa_mix_anova(mo)
+    lin <- an[trimws(an$Source) == trimws(gtxt("  Linear")), , drop=FALSE]
+    if (nrow(lin) && is.finite(lin$P[1]))
+        add(gtxt("Components"), if (lin$P[1] < alpha) gtxtf("The pure components give different responses (Linear Sig. %s).", .fa_pv(lin$P[1]))
+                                else gtxtf("The pure components do not clearly differ (Linear Sig. %s).", .fa_pv(lin$P[1])))
+    blend <- an[grepl("^    ", an$Source) & is.finite(an$P), , drop=FALSE]
+    if (nrow(blend)) {
+        s <- blend[blend$P < alpha, , drop=FALSE]
+        add(gtxt("Blending"), if (nrow(s)) gtxtf("Significant non-linear blending: %s (the mix behaves differently from a simple average of its parts).", .fa_listx(trimws(s$Source)))
+                              else gtxt("No significant non-linear blending terms: the response changes roughly in proportion to the amounts."))
+    }
+    lof <- an[trimws(an$Source) == trimws(gtxt("  Lack-of-Fit")), , drop=FALSE]
+    if (nrow(lof) && is.finite(lof$P[1]))
+        add(gtxt("Lack of fit"), if (lof$P[1] < alpha) gtxtf("Significant lack of fit (Sig. %s): try a higher-order mixture model.", .fa_pv(lof$P[1]))
+                                  else gtxtf("No evidence of lack of fit (Sig. %s).", .fa_pv(lof$P[1])))
+    if (mo$df_error > 0) { ad <- fa_ad_test(mo$resid)
+        if (!is.null(ad)) add(gtxt("Residuals"), if (ad$p < 0.05) gtxtf("Residuals are not normal (Anderson-Darling Sig. %s).", .fa_pv(ad$p))
+                                                 else gtxtf("Residuals are consistent with a normal distribution (Anderson-Darling Sig. %s).", .fa_pv(ad$p))) }
+    lines
+}
+
+fa_interpret_optimizer <- function(fos, pars, opt) {
+    if (!length(opt$solutions)) return(list())
+    b <- opt$solutions[[1]]; info <- fos[[1]]$coding$info
+    set <- vapply(seq_along(info), function(i) { z <- info[[i]]
+        paste0(z$name, " = ", if (z$type == "numeric") .fa_num(z$mid + b$xnum[match(i, opt$num)] * z$half, 5) else as.character(b$cat[[match(i, opt$cat)]])) }, character(1))
+    lines <- list(c(gtxt("Best settings"), paste0(paste(set, collapse=", "), ".")))
+    lines[[2]] <- c(gtxt("Desirability"), if (b$D <= 0) gtxt("Composite desirability is 0: no setting meets every response's acceptable range. Relax a lower/upper bound.")
+        else gtxtf("Composite desirability D = %s (1 = every goal fully met, 0 = at least one response unacceptable). %s", .fa_fix(b$D, 3),
+                   if (b$D >= 0.8) gtxt("The goals are met well.") else if (b$D >= 0.5) gtxt("The goals are met reasonably; some compromise is needed.") else gtxt("The goals conflict; a clear compromise was needed.")))
+    if (length(fos) > 1 && !is.null(b$d)) {
+        o <- order(b$d); w <- o[1]
+        lines[[3]] <- c(gtxt("Trade-off"), gtxtf("Weakest goal: %s (d = %s); best met: %s (d = %s).", pars[[w]]$resp, .fa_fix(b$d[w], 3),
+                                                   pars[[o[length(o)]]]$resp, .fa_fix(b$d[o[length(o)]], 3)))
+    }
+    lines[[length(lines) + 1]] <- c(gtxt("Next step"), gtxt("Confirm with a few runs at these settings; the prediction intervals below show the range to expect."))
+    lines
+}
+
+# ── Charts (drawn with base R, submitted through .doe_submit_plot) ─────────
+.fa_pal <- list(bar="#4C78A8", sig="#E45756", ref="#B279A2", center="#F58518",
+                line1="#4C78A8", line2="#E45756", line3="#54A24B", grid="grey90")
+
+fa_plot_pareto <- function(fo) {
+    se <- fa_std_effects(fo); if (is.null(se)) return(invisible(NULL))
+    o  <- order(abs(se$t))
+    v  <- abs(se$t)[o]; cd <- se$code[o]
+    .fa_try_ip(.fa_ip_pareto(fo, se))
+    .doe_submit_plot({
+        op <- par(mar=c(5, 6, 4.5, 11), family="sans"); on.exit(par(op))
+        xmax <- max(c(v, se$crit), na.rm=TRUE) * 1.12
+        bp <- barplot(v, horiz=TRUE, names.arg=cd, las=1, xlim=c(0, xmax),
+                      col=ifelse(v > se$crit, .fa_pal$sig, .fa_pal$bar), border=NA,
+                      xlab=if (se$method == "t") gtxt("Standardized effect |t|") else gtxt("Standardized effect |effect / PSE|"),
+                      main=gtxtf("Pareto of Standardized Effects: %s", fo$resp), cex.main=1)
+        abline(v=se$crit, lty=2, col=.fa_pal$ref, lwd=2)
+        mtext(.fa_num(se$crit, 4), side=3, at=se$crit, col=.fa_pal$ref, cex=0.8)
+        mtext(if (se$method == "t") gtxtf("alpha = %s, error df = %d", format(fo$alpha), fo$df_error)
+              else gtxtf("alpha = %s, Lenth PSE (no error df)", format(fo$alpha)),
+              side=3, line=0.2, cex=0.75, adj=0)
+        par(xpd=TRUE)
+        k <- length(fo$coding$info)
+        legend(par("usr")[2] * 1.02, par("usr")[4], bty="n", cex=0.75, title=gtxt("Code"),
+               legend=paste(fa_letters(k), names(fo$coding$info), sep="  "))
+    }, width=960, height=max(420, 90 + 34 * length(v)))
+}
+
+fa_plot_effects_normal <- function(fo) {
+    se <- fa_std_effects(fo); if (is.null(se) || length(se$t) < 3) return(invisible(NULL))
+    tv <- se$t; m <- length(tv)
+    o <- order(tv); q <- qnorm((seq_len(m) - 0.5) / m)
+    sig <- abs(tv[o]) > se$crit
+    .fa_try_ip(.fa_ip_normal(fo, se))
+    .doe_submit_plot({
+        op <- par(mar=c(5, 5, 4.5, 2), family="sans"); on.exit(par(op))
+        plot(tv[o], q, pch=21, bg=ifelse(sig, .fa_pal$sig, "white"), col=ifelse(sig, .fa_pal$sig, "grey30"),
+             xlab=gtxt("Standardized effect"), ylab=gtxt("Normal score"),
+             main=gtxtf("Normal Plot of Standardized Effects: %s", fo$resp), cex.main=1)
+        grid(col=.fa_pal$grid)
+        sref <- if (sum(!sig) >= 2) sd(tv[!sig]) else NA
+        if (is.finite(sref) && sref > 0) abline(a=0, b=1 / sref, col="grey50", lty=3)
+        if (any(sig)) text(tv[o][sig], q[sig], se$code[o][sig], pos=4, cex=0.8)
+        legend("topleft", bty="n", cex=0.8, pch=21, pt.bg=c(.fa_pal$sig, "white"),
+               legend=c(gtxtf("significant (alpha = %s)", format(fo$alpha)), gtxt("not significant")))
+    })
+}
+
+# settings frame helpers ------------------------------------------------------
+.fa_base_row <- function(coding) {
+    r <- data.frame(row.names=1)
+    for (i in seq_along(coding$info)) {
+        z <- coding$info[[i]]
+        if (z$type == "numeric" || z$nlev == 2) r[[paste0("X", i)]] <- 0
+        else {
+            f <- factor(z$levels[1], levels=z$levels); contrasts(f) <- contr.sum(z$nlev)
+            r[[paste0("X", i)]] <- f
+        }
+    }
+    r$CtPt <- 0
+    r
+}
+.fa_set <- function(df, i, coding, value) {
+    z <- coding$info[[i]]
+    if (z$type == "categorical" && z$nlev > 2) {
+        f <- factor(if (length(value) == 1) rep(value, nrow(df)) else value, levels=z$levels)
+        contrasts(f) <- contr.sum(z$nlev)
+        df[[paste0("X", i)]] <- f
+    } else if (z$type == "categorical") {
+        df[[paste0("X", i)]] <- ifelse(value == z$levels[1], -1, 1)
+    } else df[[paste0("X", i)]] <- value
+    df
+}
+.fa_factors_in_model <- function(fo) sort(unique(unlist(Filter(function(t) !identical(t, "CTPT"), fo$terms))))
+.fa_has_ctpt <- function(fo) any(vapply(fo$terms, identical, logical(1), "CTPT"))
+
+# Fitted mean for factor i at a level, averaging over all level combinations
+# of the other factors (cube corners for 2-level factors).
+.fa_marginal <- function(fo, fix) {
+    coding <- fo$coding; k <- length(coding$info)
+    grid <- lapply(seq_len(k), function(i) {
+        if (!is.null(fix[[as.character(i)]])) return(fix[[as.character(i)]])
+        z <- coding$info[[i]]
+        if (z$type == "numeric") c(-1, 1) else z$levels
+    })
+    g <- expand.grid(grid, stringsAsFactors=FALSE)
+    nd <- .fa_base_row(coding)[rep(1, nrow(g)), , drop=FALSE]
+    for (i in seq_len(k)) {
+        z <- coding$info[[i]]
+        if (z$type == "categorical" && z$nlev > 2) nd <- .fa_set(nd, i, coding, g[[i]])
+        else if (z$type == "categorical") nd[[paste0("X", i)]] <- ifelse(g[[i]] == z$levels[1], -1, 1)
+        else nd[[paste0("X", i)]] <- as.numeric(g[[i]])
+    }
+    if (!is.null(fix$CtPt)) nd$CtPt <- fix$CtPt
+    mean(fa_predict(fo, nd))
+}
+
+fa_plot_main_effects <- function(fo) {
+    coding <- fo$coding; fx <- .fa_factors_in_model(fo)
+    if (!length(fx)) return(invisible(NULL))
+    ctp <- .fa_has_ctpt(fo)
+    num_idx <- which(vapply(coding$info, function(z) z$type == "numeric", logical(1)))
+    vals <- list(); ctr <- list(); xl <- list()
+    for (i in fx) {
+        z <- coding$info[[i]]
+        if (z$type == "numeric") {
+            xs <- if (coding$kind == "factorial") c(-1, 1) else c(-1, 0, 1)
+            fixes <- lapply(xs, function(x) setNames(list(x), as.character(i)))
+            vals[[length(vals) + 1]] <- vapply(fixes, function(f) .fa_marginal(fo, f), numeric(1))
+            xl[[length(xl) + 1]] <- .fa_num(z$mid + xs * z$half, 4)
+            # center: every numeric factor at 0 and curvature term on
+            ctr[[length(ctr) + 1]] <- if (ctp) {
+                f <- setNames(as.list(rep(0, length(num_idx))), as.character(num_idx)); f$CtPt <- 1
+                .fa_marginal(fo, f) } else NA
+        } else {
+            vals[[length(vals) + 1]] <- vapply(z$levels, function(l) .fa_marginal(fo, setNames(list(l), as.character(i))), numeric(1))
+            xl[[length(xl) + 1]] <- z$levels
+            ctr[[length(ctr) + 1]] <- if (ctp && length(num_idx)) vapply(z$levels, function(l) {
+                f <- setNames(as.list(rep(0, length(num_idx))), as.character(num_idx))
+                f[[as.character(i)]] <- l; f$CtPt <- 1; .fa_marginal(fo, f) }, numeric(1)) else NA
+        }
+    }
+    yr <- range(c(unlist(vals), unlist(ctr)), na.rm=TRUE); yr <- yr + c(-1, 1) * 0.08 * diff(yr)
+    gm <- mean(fo$y)
+    nplot <- length(fx); nc <- min(nplot, 4); nr <- ceiling(nplot / nc)
+    .fa_try_ip(.fa_ip_main(fo, fx, vals, ctr, xl, yr, gm, ctp))
+    .doe_submit_plot({
+        op <- par(mfrow=c(nr, nc), mar=c(4.5, 4.2, 2.5, 0.8), oma=c(0, 0, 3, 0), family="sans"); on.exit(par(op))
+        for (j in seq_along(fx)) {
+            v <- vals[[j]]; xs <- seq_along(v)
+            plot(xs, v, type="b", pch=19, col=.fa_pal$line1, lwd=2, ylim=yr, xlim=c(0.7, length(v) + 0.3),
+                 xaxt="n", xlab="", ylab=if (j %% nc == 1 || nc == 1) gtxtf("Fitted mean of %s", fo$resp) else "",
+                 main=names(coding$info)[fx[j]], cex.main=0.95)
+            axis(1, at=xs, labels=xl[[j]], cex.axis=0.85)
+            grid(col=.fa_pal$grid); abline(h=gm, lty=3, col="grey55")
+            cc <- ctr[[j]]
+            if (!all(is.na(cc))) {
+                if (length(cc) == 1) points(mean(xs), cc, pch=15, col=.fa_pal$center, cex=1.3)
+                else points(xs, cc, pch=15, col=.fa_pal$center, cex=1.3)
+            }
+        }
+        mtext(gtxtf("Main Effects (Fitted Means): %s", fo$resp), outer=TRUE, line=1.2, font=2)
+        if (ctp) mtext(gtxt("square = fitted center point;  dotted line = overall mean"), outer=TRUE, line=0.1, cex=0.75)
+    }, width=min(1400, 300 * nc + 120), height=300 * nr + 110)
+}
+
+fa_plot_interactions <- function(fo, allpairs=FALSE) {
+    coding <- fo$coding
+    pairs <- Filter(function(t) !identical(t, "CTPT") && length(t) == 2 && t[1] != t[2], fo$terms)
+    if (allpairs || !length(pairs)) {
+        fx <- .fa_factors_in_model(fo)
+        pairs <- if (length(fx) >= 2) combn(fx, 2, simplify=FALSE) else list()
+    }
+    if (!length(pairs)) return(invisible(NULL))
+    lv <- function(i) { z <- coding$info[[i]]; if (z$type == "numeric") c(-1, 1) else z$levels }
+    ll <- function(i) { z <- coding$info[[i]]; if (z$type == "numeric") .fa_num(z$mid + c(-1, 1) * z$half, 4) else z$levels }
+    ctp <- .fa_has_ctpt(fo)
+    num_idx <- which(vapply(coding$info, function(z) z$type == "numeric", logical(1)))
+    np <- length(pairs); nc <- min(np, 3); nr <- ceiling(np / nc)
+    .fa_try_ip(.fa_ip_interactions(fo, pairs))
+    .doe_submit_plot({
+        op <- par(mfrow=c(nr, nc), mar=c(4.5, 4.2, 2.8, 0.8), oma=c(0, 0, 2.5, 0), family="sans"); on.exit(par(op))
+        for (pr in pairs) {
+            a <- pr[1]; b <- pr[2]
+            la <- lv(a); lb <- lv(b)
+            M <- sapply(lb, function(vb) vapply(la, function(va)
+                .fa_marginal(fo, setNames(list(va, vb), as.character(c(a, b)))), numeric(1)))
+            M <- matrix(M, nrow=length(la))
+            cc <- if (ctp && length(num_idx)) {
+                f <- setNames(as.list(rep(0, length(num_idx))), as.character(num_idx)); f$CtPt <- 1
+                .fa_marginal(fo, f) } else NA
+            yr <- range(c(M, cc), na.rm=TRUE); yr <- yr + c(-1, 1) * 0.1 * diff(yr)
+            cols <- c(.fa_pal$line1, .fa_pal$line2, .fa_pal$line3, "grey40")
+            matplot(seq_along(la), M, type="b", pch=c(19, 17, 15, 18), lty=1, lwd=2, col=cols[seq_len(ncol(M))],
+                    xaxt="n", xlab=names(coding$info)[a], ylab=gtxtf("Fitted mean of %s", fo$resp),
+                    ylim=yr, xlim=c(0.7, length(la) + 0.3),
+                    main=paste(names(coding$info)[a], "x", names(coding$info)[b]), cex.main=0.95)
+            axis(1, at=seq_along(la), labels=ll(a)); grid(col=.fa_pal$grid)
+            if (!is.na(cc)) points(mean(seq_along(la)), cc, pch=15, col=.fa_pal$center, cex=1.3)
+            legend("topleft", bty="n", cex=0.75, lwd=2, col=cols[seq_len(ncol(M))],
+                   legend=paste(names(coding$info)[b], "=", ll(b)))
+        }
+        mtext(gtxtf("Interactions (Fitted Means): %s", fo$resp), outer=TRUE, line=0.8, font=2)
+    }, width=max(760, min(1400, 400 * nc + 60)), height=max(560, 340 * nr + 80))
+}
+
+fa_plot_residuals <- function(fo) {
+    if (fo$df_error < 1) return(invisible(NULL))
+    sres <- fo$resid / (fo$s * sqrt(pmax(1e-12, 1 - fo$hat)))
+    .fa_try_ip(.fa_ip_residuals(fo, sres))
+    .doe_submit_plot({
+        op <- par(mfrow=c(2, 2), mar=c(4.5, 4.5, 2.5, 1), oma=c(0, 0, 2.5, 0), family="sans"); on.exit(par(op))
+        qq <- qqnorm(sres, plot.it=FALSE)
+        plot(qq$x, qq$y, pch=19, col=.fa_pal$line1, xlab=gtxt("Theoretical quantile"),
+             ylab=gtxt("Standardized residual"), main=gtxt("Normal probability"))
+        qqline(sres, col=.fa_pal$line2); grid(col=.fa_pal$grid)
+        plot(fo$fitted, sres, pch=19, col=.fa_pal$line1, xlab=gtxt("Fitted value"),
+             ylab=gtxt("Standardized residual"), main=gtxt("Versus fits")); abline(h=0, lty=2); grid(col=.fa_pal$grid)
+        hist(sres, col=.fa_pal$bar, border="white", xlab=gtxt("Standardized residual"), main=gtxt("Histogram"))
+        ord <- if (!is.null(fo$runorder)) order(fo$runorder) else seq_along(sres)
+        plot(seq_along(sres), sres[ord], type="b", pch=19, col=.fa_pal$line1, xlab=gtxt("Observation order"),
+             ylab=gtxt("Standardized residual"), main=gtxt("Versus order")); abline(h=0, lty=2)
+        mtext(gtxtf("Residual Diagnostics: %s", fo$resp), outer=TRUE, line=0.8, font=2)
+    })
+}
+
+fa_plot_cube <- function(fo) {
+    coding <- fo$coding
+    fx <- .fa_factors_in_model(fo)
+    fx <- fx[vapply(coding$info[fx], function(z) z$type == "numeric" || z$nlev == 2, logical(1))]
+    if (length(fx) < 2) return(invisible(NULL))
+    fx <- fx[seq_len(min(3, length(fx)))]
+    lv <- function(i) { z <- coding$info[[i]]; if (z$type == "numeric") c(-1, 1) else z$levels }
+    ll <- function(i) { z <- coding$info[[i]]; if (z$type == "numeric") .fa_num(z$mid + c(-1, 1) * z$half, 4) else z$levels }
+    .fa_try_ip(.fa_ip_cube(fo, fx))
+    .doe_submit_plot({
+        op <- par(mar=c(4, 4, 4, 2), family="sans"); on.exit(par(op))
+        plot(0, 0, type="n", xlim=c(-0.4, 1.9), ylim=c(-0.35, 1.75), axes=FALSE, xlab="", ylab="",
+             main=gtxtf("Cube of Fitted Means: %s", fo$resp), cex.main=1)
+        P <- function(x, y, z) c(x + 0.45 * z, y + 0.4 * z)
+        zs <- if (length(fx) == 3) 0:1 else 0
+        corners <- expand.grid(x=0:1, y=0:1, z=zs)
+        for (e in seq_len(nrow(corners))) for (f in seq_len(nrow(corners))) {
+            if (sum(abs(unlist(corners[e, ]) - unlist(corners[f, ]))) == 1 && e < f) {
+                a <- P(corners$x[e], corners$y[e], corners$z[e]); b <- P(corners$x[f], corners$y[f], corners$z[f])
+                segments(a[1], a[2], b[1], b[2], col="grey50")
+            }
+        }
+        for (e in seq_len(nrow(corners))) {
+            fix <- list()
+            fix[[as.character(fx[1])]] <- lv(fx[1])[corners$x[e] + 1]
+            fix[[as.character(fx[2])]] <- lv(fx[2])[corners$y[e] + 1]
+            if (length(fx) == 3) fix[[as.character(fx[3])]] <- lv(fx[3])[corners$z[e] + 1]
+            v <- .fa_marginal(fo, fix)
+            p <- P(corners$x[e], corners$y[e], corners$z[e])
+            points(p[1], p[2], pch=19, col=.fa_pal$line1)
+            text(p[1], p[2], .fa_num(v, 4), pos=if (corners$y[e] == 1) 3 else 1, cex=0.85)
+        }
+        nm <- names(coding$info)
+        text(0.5, -0.3, paste0(nm[fx[1]], ":  ", ll(fx[1])[1], "  ->  ", ll(fx[1])[2]), cex=0.85)
+        text(-0.35, 0.5, paste0(nm[fx[2]], ":  ", ll(fx[2])[1], " -> ", ll(fx[2])[2]), srt=90, cex=0.85)
+        if (length(fx) == 3) text(1.55, 0.05, paste0(nm[fx[3]], ":  ", ll(fx[3])[1], " -> ", ll(fx[3])[2]), srt=42, cex=0.85)
+    }, width=820, height=700)
+}
+
+fa_plot_contours <- function(fo, maxpairs=6) {
+    coding <- fo$coding
+    fx <- .fa_factors_in_model(fo)
+    fx <- fx[vapply(coding$info[fx], function(z) z$type == "numeric", logical(1))]
+    if (length(fx) < 2) return(invisible(NULL))
+    pairs <- combn(fx, 2, simplify=FALSE)[seq_len(min(maxpairs, choose(length(fx), 2)))]
+    rng <- function(i) { r <- range(fo$cd[[paste0("X", i)]], na.rm=TRUE); c(min(-1, r[1]), max(1, r[2])) }
+    np <- length(pairs); nc <- min(np, 3); nr <- ceiling(np / nc)
+    .fa_try_ip(.fa_ip_contours(fo, pairs))
+    .doe_submit_plot({
+        op <- par(mfrow=c(nr, nc), mar=c(4.5, 4.5, 2.8, 1), oma=c(0, 0, 2.5, 0), family="sans"); on.exit(par(op))
+        for (pr in pairs) {
+            a <- pr[1]; b <- pr[2]
+            ga <- seq(rng(a)[1], rng(a)[2], length.out=41); gb <- seq(rng(b)[1], rng(b)[2], length.out=41)
+            g  <- expand.grid(ga, gb)
+            nd <- .fa_base_row(coding)[rep(1, nrow(g)), , drop=FALSE]
+            nd[[paste0("X", a)]] <- g[[1]]; nd[[paste0("X", b)]] <- g[[2]]
+            z <- matrix(fa_predict(fo, nd), 41, 41)
+            za <- coding$info[[a]]; zb <- coding$info[[b]]
+            filled <- grDevices::hcl.colors(12, "Blues 3", rev=TRUE)
+            image(za$mid + ga * za$half, zb$mid + gb * zb$half, z, col=filled,
+                  xlab=za$name, ylab=zb$name, main=paste(za$name, "x", zb$name), cex.main=0.95)
+            contour(za$mid + ga * za$half, zb$mid + gb * zb$half, z, add=TRUE, labcex=0.7, col="grey20")
+        }
+        mtext(gtxtf("Contours of Fitted %s (other factors at center / first level)", fo$resp),
+              outer=TRUE, line=0.8, font=2)
+    }, width=min(1400, 420 * nc + 60), height=380 * nr + 80)
+}
+
+
+# ── Multi-response optimization (Derringer & Suich desirability) ───────────
+# goal: "maximize" | "minimize" | "target"; lower/target/upper per response.
+fa_desirability <- function(y, goal, L, T, U, w=1) {
+    d <- rep(NA_real_, length(y))
+    if (goal == "maximize") {
+        d <- ifelse(y <= L, 0, ifelse(y >= T, 1, ((y - L) / (T - L))^w))
+    } else if (goal == "minimize") {
+        d <- ifelse(y <= T, 1, ifelse(y >= U, 0, ((U - y) / (U - T))^w))
+    } else {
+        d <- ifelse(y < L | y > U, 0,
+             ifelse(y <= T, ((y - L) / (T - L))^w, ((U - y) / (U - T))^w))
+        d[y == T] <- 1
+    }
+    d
+}
+
+# Resolve and validate optimization parameters per response.
+fa_opt_params <- function(fos, goals, lowers, targets, uppers, weights, importance, warns) {
+    r <- length(fos)
+    rep_to <- function(x, default) {
+        x <- suppressWarnings(as.numeric(unlist(x)))
+        if (!length(x)) return(rep(default, r))
+        if (length(x) < r) x <- c(x, rep(default, r - length(x)))
+        x[seq_len(r)]
+    }
+    L <- rep_to(lowers, NA); Tg <- rep_to(targets, NA); U <- rep_to(uppers, NA)
+    W <- rep_to(weights, 1); I <- rep_to(importance, 1)
+    goals <- tolower(rep(parse_multi_values(goals), length.out=r))
+    goals[goals %in% c("max")] <- "maximize"; goals[goals %in% c("min")] <- "minimize"
+    goals[goals %in% c("tgt")] <- "target"
+    out <- list()
+    for (k in seq_len(r)) {
+        g <- goals[k]; y <- if (!is.null(fos[[k]]$y_orig)) fos[[k]]$y_orig else fos[[k]]$y; nm <- fos[[k]]$resp
+        if (!g %in% c("maximize","minimize","target")) {
+            warns$warn(gtxtf("Optimizer: unknown goal '%s' for %s; MAXIMIZE used.", g, nm), dostop=FALSE); g <- "maximize"
+        }
+        lo <- L[k]; tg <- Tg[k]; up <- U[k]
+        if (g == "maximize") {
+            if (!is.finite(lo)) lo <- min(y); if (!is.finite(tg)) tg <- max(y)
+            if (!(tg > lo)) stop(gtxtf("Optimizer: %s (maximize) needs lower < target.", nm), call.=FALSE)
+            up <- NA
+        } else if (g == "minimize") {
+            if (!is.finite(tg)) tg <- min(y); if (!is.finite(up)) up <- max(y)
+            if (!(up > tg)) stop(gtxtf("Optimizer: %s (minimize) needs target < upper.", nm), call.=FALSE)
+            lo <- NA
+        } else {
+            if (!is.finite(lo)) lo <- min(y); if (!is.finite(up)) up <- max(y)
+            if (!is.finite(tg)) tg <- (lo + up) / 2
+            if (!(lo < tg && tg < up)) stop(gtxtf("Optimizer: %s (target) needs lower < target < upper.", nm), call.=FALSE)
+        }
+        w <- W[k]; if (!is.finite(w) || w < 0.1 || w > 10) {
+            warns$warn(gtxtf("Optimizer: weight for %s must be between 0.1 and 10; 1 used.", nm), dostop=FALSE); w <- 1 }
+        im <- I[k]; if (!is.finite(im) || im < 0.1 || im > 10) {
+            warns$warn(gtxtf("Optimizer: importance for %s must be between 0.1 and 10; 1 used.", nm), dostop=FALSE); im <- 1 }
+        out[[k]] <- list(resp=nm, goal=g, L=lo, T=tg, U=up, w=w, imp=im)
+    }
+    out
+}
+
+.fa_composite <- function(preds, pars) {
+    d <- vapply(seq_along(pars), function(k) {
+        p <- pars[[k]]; fa_desirability(preds[k], p$goal, p$L, p$T, p$U, p$w)
+    }, numeric(1))
+    imp <- vapply(pars, function(p) p$imp, numeric(1))
+    D <- if (any(d <= 0)) 0 else exp(sum(imp * log(d)) / sum(imp))
+    # tie-breaker (only matters when D is flat, e.g. several settings all
+    # reach D = 1): how far each response goes beyond its lower/upper bound,
+    # uncapped for maximize/minimize, so "maximize" really prefers the
+    # largest prediction among otherwise equal settings.
+    tb <- mean(vapply(seq_along(pars), function(k) {
+        p <- pars[[k]]; y <- preds[k]
+        if (p$goal == "maximize") (y - p$L) / (p$T - p$L)
+        else if (p$goal == "minimize") (p$U - y) / (p$U - p$T)
+        else d[k]
+    }, numeric(1)))
+    list(d=d, D=D, tb=tb)
+}
+
+# holds: named character vector factor=value (natural units / level)
+fa_optimize <- function(fos, pars, holds, warns, nsolutions=1) {
+    coding <- fos[[1]]$coding; info <- coding$info; k <- length(info)
+    hold_idx <- list()
+    for (h in names(holds)) {
+        i <- match(tolower(h), tolower(names(info)))
+        if (is.na(i)) { warns$warn(gtxtf("Optimizer: HOLD factor '%s' is not a design factor; ignored.", h), dostop=FALSE); next }
+        z <- info[[i]]
+        if (z$type == "numeric") {
+            v <- suppressWarnings(as.numeric(holds[[h]]))
+            if (!is.finite(v)) { warns$warn(gtxtf("Optimizer: HOLD value for '%s' is not numeric; ignored.", h), dostop=FALSE); next }
+            hold_idx[[as.character(i)]] <- (v - z$mid) / z$half
+        } else {
+            m <- match(tolower(holds[[h]]), tolower(z$levels))
+            if (is.na(m)) { warns$warn(gtxtf("Optimizer: '%s' is not a level of %s; HOLD ignored.", holds[[h]], h), dostop=FALSE); next }
+            hold_idx[[as.character(i)]] <- z$levels[m]
+        }
+    }
+    num <- which(vapply(info, function(z) z$type == "numeric", logical(1)))
+    cat_ <- setdiff(seq_len(k), num)
+    free_num <- setdiff(num, as.integer(names(hold_idx)))
+    cat_levels <- lapply(cat_, function(i) if (!is.null(hold_idx[[as.character(i)]])) hold_idx[[as.character(i)]] else info[[i]]$levels)
+    catgrid <- if (length(cat_)) expand.grid(cat_levels, stringsAsFactors=FALSE) else data.frame(dummy=1)
+    # coded range of each numeric factor = region spanned by the design
+    rngs <- lapply(num, function(i) {
+        r <- range(unlist(lapply(fos, function(f) f$cd[[paste0("X", i)]])), na.rm=TRUE)
+        c(min(-1, r[1]), max(1, r[2]))
+    }); names(rngs) <- as.character(num)
+    uses_ctpt <- any(vapply(fos, .fa_has_ctpt, logical(1)))
+
+    make_nd <- function(xnum, catrow, ctpt=0) {
+        nd <- .fa_base_row(coding)
+        for (j in seq_along(num)) nd[[paste0("X", num[j])]] <- xnum[j]
+        for (j in seq_along(cat_)) nd <- .fa_set(nd, cat_[j], coding, catrow[[j]])
+        nd$CtPt <- ctpt
+        nd
+    }
+    evalD <- function(nd) {
+        pr <- vapply(fos, function(f) fa_predict_orig(f, nd), numeric(1))
+        c(list(pred=pr), .fa_composite(pr, pars))
+    }
+    cands <- list()
+    add_cand <- function(xnum, catrow, ctpt) {
+        nd <- make_nd(xnum, catrow, ctpt); e <- evalD(nd)
+        cands[[length(cands) + 1]] <<- list(xnum=xnum, cat=catrow, ctpt=ctpt, nd=nd, pred=e$pred, d=e$d, D=e$D, tb=e$tb)
+    }
+    fixed_num <- function() {
+        x <- rep(0, length(num))
+        for (j in seq_along(num)) if (!is.null(hold_idx[[as.character(num[j])]])) x[j] <- hold_idx[[as.character(num[j])]]
+        x
+    }
+    for (ci in seq_len(nrow(catgrid))) {
+        catrow <- if (length(cat_)) as.list(catgrid[ci, , drop=TRUE]) else list()
+        if (uses_ctpt) {
+            # a model with a curvature term only predicts at cube corners and
+            # at the center point, so only those settings are searched
+            corners <- if (length(free_num)) as.matrix(expand.grid(rep(list(c(-1, 1)), length(free_num)))) else matrix(0, 1, 0)
+            for (r in seq_len(nrow(corners))) {
+                x <- fixed_num(); x[match(free_num, num)] <- corners[r, ]
+                add_cand(x, catrow, 0)
+            }
+            add_cand(fixed_num(), catrow, if (length(num)) 1 else 0)
+        } else {
+            nf <- length(free_num)
+            m  <- if (nf == 0) 1 else max(3, min(11, floor(4000^(1 / nf))))
+            grid <- if (nf) as.matrix(expand.grid(lapply(free_num, function(i) seq(rngs[[as.character(i)]][1], rngs[[as.character(i)]][2], length.out=m))))
+                    else matrix(0, 1, 0)
+            base <- fixed_num()
+            G <- matrix(base, nrow=nrow(grid), ncol=length(num), byrow=TRUE)
+            if (nf) G[, match(free_num, num)] <- grid
+            ndg <- .fa_base_row(coding)[rep(1, nrow(G)), , drop=FALSE]
+            for (j in seq_along(num)) ndg[[paste0("X", num[j])]] <- G[, j]
+            for (j in seq_along(cat_)) ndg <- .fa_set(ndg, cat_[j], coding, catrow[[j]])
+            ndg$CtPt <- 0
+            PR <- sapply(fos, function(f) fa_predict_orig(f, ndg)); PR <- matrix(PR, nrow=nrow(G))
+            Ds <- apply(PR, 1, function(pr) { e <- .fa_composite(pr, pars); e$D + 1e-6 * e$tb })
+            starts <- order(-Ds)[seq_len(min(8, length(Ds)))]
+            for (s in starts) {
+                x0 <- base; if (nf) x0[match(free_num, num)] <- grid[s, ]
+                if (nf) {
+                    lo <- vapply(free_num, function(i) rngs[[as.character(i)]][1], numeric(1))
+                    hi <- vapply(free_num, function(i) rngs[[as.character(i)]][2], numeric(1))
+                    obj <- function(z) {
+                        x <- base; x[match(free_num, num)] <- pmin(hi, pmax(lo, z))
+                        e <- evalD(make_nd(x, catrow))
+                        # smooth tie-breaker so the search can move off plateaus
+                        -(e$D + 1e-6 * e$tb)
+                    }
+                    o <- tryCatch(optim(grid[s, ], obj, method="L-BFGS-B", lower=lo, upper=hi,
+                                        control=list(maxit=300)), error=function(e) NULL)
+                    if (!is.null(o)) x0[match(free_num, num)] <- pmin(hi, pmax(lo, o$par))
+                }
+                add_cand(x0, catrow, 0)
+            }
+        }
+    }
+    Dv <- vapply(cands, function(c) c$D + 1e-6 * c$tb, numeric(1))
+    # rank; remove near-duplicate solutions
+    o <- order(-Dv); keep <- list()
+    for (i in o) {
+        c <- cands[[i]]
+        dup <- any(vapply(keep, function(q) isTRUE(all.equal(q$xnum, c$xnum, tolerance=1e-3)) &&
+                           identical(q$cat, c$cat) && q$ctpt == c$ctpt, logical(1)))
+        if (!dup) keep[[length(keep) + 1]] <- c
+        if (length(keep) >= nsolutions) break
+    }
+    list(solutions=keep, uses_ctpt=uses_ctpt, num=num, cat=cat_, holds=hold_idx)
+}
+
+fa_display_optimizer <- function(fos, pars, opt, conf=0.95) {
+    coding <- fos[[1]]$coding; info <- coding$info
+    gl <- c(maximize=gtxt("Maximize"), minimize=gtxt("Minimize"), target=gtxt("Target"))
+    pt <- data.frame(vapply(pars, function(p) gl[[p$goal]], character(1)),
+                     .fa_num(vapply(pars, function(p) p$L, numeric(1))),
+                     .fa_num(vapply(pars, function(p) p$T, numeric(1))),
+                     .fa_num(vapply(pars, function(p) p$U, numeric(1))),
+                     .fa_num(vapply(pars, function(p) p$w, numeric(1))),
+                     .fa_num(vapply(pars, function(p) p$imp, numeric(1))), stringsAsFactors=FALSE)
+    names(pt) <- c(gtxt("Goal"), gtxt("Lower"), gtxt("Target"), gtxt("Upper"), gtxt("Weight"), gtxt("Importance"))
+    .fa_show(pt, gtxt("Optimization Criteria"), "DOEOPTCRIT", outline=gtxt("Optimization Criteria"),
+             rowlabels=vapply(pars, function(p) p$resp, character(1)),
+             caption=gtxt("Individual desirability d rises from 0 at the lower (or upper) bound to 1 at the target; weight shapes the curve; composite D is the importance-weighted geometric mean of all d."))
+    # factor ranges / holds
+    fr <- do.call(rbind, lapply(seq_along(info), function(i) {
+        z <- info[[i]]; h <- opt$holds[[as.character(i)]]
+        rngtxt <- if (!is.null(h)) {
+            if (z$type == "numeric") gtxtf("held at %s", .fa_num(z$mid + h * z$half)) else gtxtf("held at %s", h)
+        } else if (z$type == "numeric") {
+            r <- range(unlist(lapply(fos, function(f) f$cd[[paste0("X", i)]])), na.rm=TRUE)
+            r <- c(min(-1, r[1]), max(1, r[2]))
+            paste0("[", .fa_num(z$mid + r[1] * z$half), ", ", .fa_num(z$mid + r[2] * z$half), "]")
+        } else paste(z$levels, collapse=", ")
+        data.frame(Setting=rngtxt, stringsAsFactors=FALSE)
+    }))
+    names(fr) <- gtxt("Search Region")
+    .fa_show(fr, gtxt("Factor Search Region"), "DOEOPTRANGE", outline=gtxt("Factor Search Region"),
+             rowlabels=names(info),
+             caption=if (opt$uses_ctpt) gtxt("At least one model contains the center-point (curvature) term, which is only defined at the cube corners and the center point; only those settings were evaluated.") else NULL)
+    # solutions
+    sols <- opt$solutions
+    st <- do.call(rbind, lapply(seq_along(sols), function(s) {
+        c <- sols[[s]]
+        row <- list()
+        for (i in seq_along(info)) {
+            z <- info[[i]]
+            row[[z$name]] <- if (z$type == "numeric") .fa_num(z$mid + c$xnum[match(i, opt$num)] * z$half, 5)
+                             else as.character(c$cat[[match(i, opt$cat)]])
+        }
+        for (k in seq_along(fos)) row[[paste0(fos[[k]]$resp, " ", gtxt("fit"))]] <- .fa_num(c$pred[k], 5)
+        row[[gtxt("Composite D")]] <- .fa_fix(c$D, 4)
+        as.data.frame(row, stringsAsFactors=FALSE, check.names=FALSE)
+    }))
+    .fa_show(st, gtxt("Optimal Settings"), "DOEOPTSOL", outline=gtxt("Optimal Settings"),
+             rowlabels=as.character(seq_along(sols)),
+             caption=if (length(sols) && sols[[1]]$D == 0) gtxt("No setting satisfies every response's acceptable range (composite D = 0). Consider relaxing lower/upper bounds.") else NULL)
+    # predictions at the best solution
+    if (length(sols)) {
+        c <- sols[[1]]
+        pr <- do.call(rbind, lapply(seq_along(fos), function(k) {
+            f <- fos[[k]]; ps <- fa_predict(f, c$nd, se=TRUE)
+            if (f$df_error > 0) {
+                tq <- qt(1 - (1 - conf) / 2, f$df_error)
+                ci <- ps$fit + c(-1, 1) * tq * ps$se
+                pi <- ps$fit + c(-1, 1) * tq * sqrt(ps$se^2 + f$mse)
+            } else { ci <- c(NA, NA); pi <- c(NA, NA) }
+            tr <- is.finite(f$lambda %||% NA)
+            fitv <- fa_untransform(f, ps$fit)
+            ci <- sort(fa_untransform(f, ci)); pi <- sort(fa_untransform(f, pi))
+            data.frame(.fa_num(fitv, 5), if (tr) "" else .fa_num(ps$se, 4),
+                       paste0("(", .fa_num(ci[1], 5), ", ", .fa_num(ci[2], 5), ")"),
+                       paste0("(", .fa_num(pi[1], 5), ", ", .fa_num(pi[2], 5), ")"),
+                       .fa_fix(c$d[k], 4), stringsAsFactors=FALSE)
+        }))
+        names(pr) <- c(gtxt("Fit"), gtxt("SE Fit"), gtxtf("%s%% CI", format(100 * conf)),
+                       gtxtf("%s%% PI", format(100 * conf)), gtxt("Desirability d"))
+        .fa_show(pr, gtxt("Predicted Responses at the Optimal Settings"), "DOEOPTPRED",
+                 outline=gtxt("Predictions at Optimum"),
+                 rowlabels=vapply(fos, function(f) f$resp, character(1)),
+                 caption=gtxtf("CI = confidence interval for the mean response; PI = prediction interval for a single new run. Composite D = %s.", .fa_fix(c$D, 4)))
+    }
+    invisible(NULL)
+}
+
+# Profile chart: each response (and D) versus each factor, others at optimum.
+fa_plot_optimizer <- function(fos, pars, opt) {
+    if (!length(opt$solutions)) return(invisible(NULL))
+    best <- opt$solutions[[1]]; coding <- fos[[1]]$coding; info <- coding$info
+    free <- seq_along(info)
+    if (opt$uses_ctpt) {
+        # a curvature model is only defined at corners/center: show the
+        # composite D of every evaluated setting instead of smooth profiles
+    }
+    nr <- length(fos) + 1; nc <- length(free)
+    .fa_try_ip(.fa_ip_optimizer(fos, pars, opt))
+    .doe_submit_plot({
+        op <- par(mfrow=c(nr, nc), mar=c(2.2, 3.2, 1.6, 0.6), oma=c(3, 9, 3, 0), family="sans"); on.exit(par(op))
+        for (row in 0:length(fos)) for (i in free) {
+            z <- info[[i]]
+            if (z$type == "numeric") {
+                r <- range(unlist(lapply(fos, function(f) f$cd[[paste0("X", i)]])), na.rm=TRUE)
+                xs <- if (opt$uses_ctpt) c(-1, 1) else seq(min(-1, r[1]), max(1, r[2]), length.out=41)
+            } else xs <- z$levels
+            vals <- vapply(seq_along(xs), function(j) {
+                nd <- best$nd
+                nd <- if (z$type == "numeric") { nd[[paste0("X", i)]] <- xs[j]; nd } else .fa_set(nd, i, coding, xs[j])
+                if (opt$uses_ctpt) nd$CtPt <- 0
+                pr <- vapply(fos, function(f) fa_predict_orig(f, nd), numeric(1))
+                if (row == 0) .fa_composite(pr, pars)$D else pr[row]
+            }, numeric(1))
+            xnat <- if (z$type == "numeric") z$mid + (if (is.numeric(xs)) xs else 0) * z$half else seq_along(xs)
+            cur  <- if (z$type == "numeric") z$mid + best$xnum[match(i, opt$num)] * z$half else match(best$cat[[match(i, opt$cat)]], xs)
+            plot(xnat, vals, type=if (length(xs) > 2) "l" else "b", lwd=2, pch=19,
+                 col=if (row == 0) .fa_pal$sig else .fa_pal$line1, xaxt=if (z$type == "numeric") "s" else "n",
+                 xlab="", ylab="", main=if (row == 0) z$name else "", cex.main=0.95,
+                 ylim=if (row == 0) c(0, 1) else NULL)
+            if (z$type != "numeric") axis(1, at=seq_along(xs), labels=xs)
+            abline(v=cur, col=.fa_pal$center, lty=2, lwd=1.5)
+            if (row > 0) { p <- pars[[row]]; abline(h=na.omit(c(p$L, p$T, p$U)), col="grey70", lty=3) }
+            if (i == 1) mtext(if (row == 0) gtxtf("Composite D\n%s", .fa_fix(best$D, 4)) else
+                              paste0(pars[[row]]$resp, "\n", gtxtf("d = %s", .fa_fix(best$d[row], 4))),
+                              side=2, line=4, las=1, cex=0.7, adj=1, outer=FALSE)
+        }
+        mtext(gtxt("Optimization Profile (dashed line = optimal setting)"), outer=TRUE, line=1, font=2)
+    }, width=min(1600, 260 * nc + 220), height=min(1600, 170 * nr + 90))
+}
+
+
+# ── Report capture (tables + chart images) for the HTML report ─────────────
+.fa_capture <- new.env()
+.fa_capture$on <- FALSE
+.fa_capture$items <- list()
+.fa_capture_start <- function() { .fa_capture$on <- TRUE; .fa_capture$items <- list(); .fa_capture$skip_img <- FALSE }
+.fa_capture_add <- function(item) if (isTRUE(.fa_capture$on)) .fa_capture$items[[length(.fa_capture$items) + 1]] <- item
+
+.fa_b64 <- function(path) {
+    raw <- readBin(path, "raw", file.info(path)$size)
+    if (requireNamespace("jsonlite", quietly=TRUE)) return(jsonlite::base64_enc(raw))
+    tbl <- strsplit("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/", "")[[1]]
+    b <- as.integer(raw); n <- length(b); pad <- (3 - n %% 3) %% 3
+    b <- c(b, rep(0L, pad)); m <- matrix(b, nrow=3)
+    v <- m[1, ] * 65536L + m[2, ] * 256L + m[3, ]
+    idx <- rbind(v %/% 262144L, (v %/% 4096L) %% 64L, (v %/% 64L) %% 64L, v %% 64L) + 1L
+    s <- tbl[idx]
+    if (pad) s[(length(s) - pad + 1):length(s)] <- "="
+    paste(s, collapse="")
+}
+.fa_html_esc <- function(x) { x <- gsub("&", "&amp;", x, fixed=TRUE); x <- gsub("<", "&lt;", x, fixed=TRUE); gsub(">", "&gt;", x, fixed=TRUE) }
+
+# Opens a saved HTML report in the default browser without making SPSS wait
+# for the browser: hand-off via explorer.exe (Windows), /usr/bin/open (macOS)
+# or xdg-open (Linux), never blocking and never capturing output.
+.doe_open_html <- function(path) {
+    tryCatch({
+        if (.Platform$OS.type == "windows") {
+            p <- normalizePath(path, winslash="\\", mustWork=TRUE)
+            system2("explorer.exe", shQuote(p, type="cmd"), wait=FALSE, stdout=FALSE, stderr=FALSE)
+        } else {
+            p <- normalizePath(path, mustWork=TRUE)
+            opener <- if (Sys.info()[["sysname"]] == "Darwin") "/usr/bin/open" else Sys.which("xdg-open")
+            if (nzchar(opener)) system2(opener, shQuote(p), wait=FALSE, stdout=FALSE, stderr=FALSE)
+        }
+    }, error=function(e) NULL)
+    invisible(NULL)
+}
+
+fa_write_html <- function(path, title, warns) {
+    # Tables stay in the SPSS Viewer; the HTML report carries the charts only,
+    # as interactive plotly.js charts (static PNG for any chart without one).
+    items <- Filter(function(it) it$type %in% c("image", "plotly"), .fa_capture$items)
+    if (!length(items)) return(invisible(NULL))   # no charts requested: nothing to report, no message needed
+    has_ip <- any(vapply(items, function(it) it$type == "plotly", logical(1)))
+    css <- paste(
+        "body{font-family:Segoe UI,Helvetica,Arial,sans-serif;margin:0;color:#222;background:#fff}",
+        ".wrap{max-width:1200px;margin:0 auto;padding:18px 24px}",
+        "h1{font-size:22px;border-bottom:2px solid #4C78A8;padding-bottom:6px;margin:0 0 6px}",
+        "h2{font-size:17px;margin:30px 0 6px;color:#2b4a6f}",
+        ".cap{font-size:12px;color:#555;max-width:1000px;margin:2px 0 8px}",
+        ".bar{position:sticky;top:0;z-index:5;background:#f4f6f9;border-bottom:1px solid #dde2ea;padding:8px 24px;font-size:13px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}",
+        ".bar button,.bar select{font:inherit;padding:3px 9px;border:1px solid #b9c2cf;border-radius:4px;background:#fff;cursor:pointer}",
+        ".grid{display:grid;gap:14px}",
+        ".card{border:1px solid #e3e6ea;border-radius:6px;padding:4px;background:#fff;min-width:0}",
+        "img{max-width:100%;border:1px solid #e3e6ea;margin:8px 0;background:#fff}",
+        ".card:not(:hover) .js-placeholder{display:none}",
+        ".card{position:relative}.cardbar{display:flex;justify-content:flex-end;align-items:center;gap:6px;padding:3px 6px 0;opacity:.55;transition:opacity .15s;font-size:11px;color:#667}.card:hover .cardbar{opacity:1}",
+        ".cardbar select{font:12px Segoe UI,Helvetica,Arial,sans-serif;padding:2px 4px;border:1px solid #b9c2cf;border-radius:4px;background:#fff}",
+        "body.t-dark .cardbar select{background:#2b3038;color:#e6e6e6;border-color:#4a515c}",
+        "@media (max-width:800px){.grid{grid-template-columns:1fr !important}}",
+        "body.t-dark{background:#16181c;color:#e6e6e6} body.t-dark .card{background:#1e2127;border-color:#3a3f48}",
+        "body.t-dark .bar{background:#23272e;border-color:#3a3f48} body.t-dark h2{color:#8fb3de} body.t-dark .cap{color:#aaa}",
+        "body.t-dark .bar button,body.t-dark .bar select{background:#2b3038;color:#e6e6e6;border-color:#4a515c}")
+    out <- c("<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>",
+             paste0("<title>", .fa_html_esc(title), "</title><style>", css, "</style>"))
+    if (has_ip) out <- c(out, .fa_plotly_js(), paste0("<script>", .fa_report_js, "</script>"))
+    out <- c(out, "</head><body class='t-light'>")
+    if (has_ip)
+        out <- c(out, paste0("<div class='bar'><b>", .fa_html_esc(gtxt("Chart options")), "</b>",
+            "<label>", .fa_html_esc(gtxt("Theme")), " <select onchange='doeTheme(this.value)'>",
+            "<option value='light'>", .fa_html_esc(gtxt("Light")), "</option><option value='dark'>", .fa_html_esc(gtxt("Dark")),
+            "</option><option value='print'>", .fa_html_esc(gtxt("Print")), "</option></select></label>",
+            "<label>", .fa_html_esc(gtxt("Colour palette (all charts)")), " <select id='doe-global-pal' class='doe-pal' onchange='doePaletteAll(this.value)'></select></label>",
+            "<span>", .fa_html_esc(gtxt("Text size")), " <button onclick='doeFont(-1)'>A-</button> <button onclick='doeFont(1)'>A+</button></span>",
+            "<span class='cap' style='margin:0'>", .fa_html_esc(gtxt("Click any title, axis label, legend entry or note to edit it; drag the legend or notes to move them. Hover a chart for its toolbar (zoom, pan, reset, download PNG or SVG, download the data as CSV, flip X/Y) and its own Colours menu (top right of each chart). Downloads keep the colours you choose.")),
+            "</span></div>"))
+    out <- c(out, "<div class='wrap'>", paste0("<h1>", .fa_html_esc(title), "</h1>"),
+             paste0("<p class='cap'>", .fa_html_esc(format(Sys.time(), "%Y-%m-%d %H:%M")), " &middot; ",
+                    .fa_html_esc(gtxt("Charts only; all tables are in the SPSS Viewer.")), "</p>"))
+    nid <- 0
+    for (it in items) {
+        if (it$type == "image") {
+            out <- c(out, paste0("<img alt='chart' src='data:image/png;base64,", it$b64, "'/>"))
+        } else {
+            out <- c(out, paste0("<h2>", .fa_html_esc(it$heading), "</h2>"))
+            if (!is.null(it$note)) out <- c(out, paste0("<p class='cap'>", .fa_html_esc(it$note), "</p>"))
+            out <- c(out, sprintf("<div class='grid' style='grid-template-columns:repeat(%d,minmax(0,1fr))'>", max(1, it$cols)))
+            for (ch in it$charts) {
+                nid <- nid + 1; id <- sprintf("doechart%d", nid)
+                csv <- if (is.null(ch$csv)) list() else ch$csv
+                nm <- gsub("[^A-Za-z0-9_.-]+", "_", ch$name)
+                out <- c(out, sprintf("<div class='card'><div class='cardbar'><span>%s</span><select class='doe-pal' data-for='%s' title='%s' onchange=\"doePalette(document.getElementById('%s'),this.value)\"></select></div><div id='%s' style='width:100%%;height:%dpx'></div></div>",
+                                      .fa_html_esc(gtxt("Colours")), id, .fa_html_esc(gtxt("Colour palette for this chart")), id, id, as.integer(ch$height)),
+                         sprintf("<script>doePlot('%s',%s,%s,%s,%s);</script>", id, .fa_json(ch$data), .fa_json(ch$layout),
+                                 .fa_json(csv), .fa_json(nm)))
+            }
+            out <- c(out, "</div>")
+        }
+    }
+    out <- c(out, "</div></body></html>")
+    ok <- tryCatch({ con <- file(path, open="w", encoding="UTF-8"); writeLines(out, con, useBytes=TRUE); close(con); TRUE }, error=function(e) {
+        warns$warn(gtxtf("HTML report could not be written: %s", e$message), dostop=FALSE); FALSE })
+    if (ok) {
+        warns$warn(gtxtf("Interactive HTML chart report saved to: %s", path), dostop=FALSE)
+        .doe_open_html(path)
+    }
+    invisible(ok)
+}
+
+# ── Orchestration ───────────────────────────────────────────────────────────
+# Runs the coded analysis for every response and (optionally) the optimizer.
+fa_run_analysis <- function(data, factors, responses, designtype, warns, opts) {
+    factors <- as.character(unlist(factors))
+    # dataset variable names are matched case-insensitively
+    fixcase <- function(v) { m <- match(tolower(v), tolower(names(data))); ifelse(is.na(m), v, names(data)[m]) }
+    factors <- fixcase(factors); responses <- fixcase(as.character(unlist(responses)))
+    if (!length(responses)) stop(gtxt("RESPONSEVAR must name at least one response variable."), call.=FALSE)
+    if (!length(factors))
+        stop(gtxt("VARNAMES must list the design factors to analyze."), call.=FALSE)
+    miss <- factors[!factors %in% names(data)]
+    if (length(miss))
+        stop(gtxtf("Factor variable(s) not found in the dataset: %s", paste(miss, collapse=", ")), call.=FALSE)
+    clash <- intersect(tolower(factors), tolower(responses))
+    if (length(clash))
+        stop(gtxtf("A variable cannot be both a factor and a response: %s", paste(clash, collapse=", ")), call.=FALSE)
+    for (r in responses) {
+        if (!is.numeric(data[[r]]))
+            stop(gtxtf("Response '%s' must be numeric.", r), call.=FALSE)
+    }
+    alpha <- suppressWarnings(as.numeric(opts$alpha)); if (!is.finite(alpha) || alpha <= 0 || alpha >= 0.5) {
+        if (!is.null(opts$alpha)) warns$warn(gtxt("ALPHA must be between 0 and 0.5; 0.05 used."), dostop=FALSE)
+        alpha <- 0.05 }
+    conf <- suppressWarnings(as.numeric(opts$conflevel)); if (!is.finite(conf)) conf <- 95
+    if (conf > 1) conf <- conf / 100
+    if (conf <= 0.5 || conf >= 1) { warns$warn(gtxt("CONFLEVEL must be between 50 and 99.99; 95 used."), dostop=FALSE); conf <- 0.95 }
+    arem <- suppressWarnings(as.numeric(opts$alpharemove)); if (!is.finite(arem) || arem <= 0 || arem >= 1) arem <- 0.10
+    opts$alpharemove <- arem
+
+    aent <- suppressWarnings(as.numeric(opts$alphaenter)); if (!is.finite(aent) || aent <= 0 || aent >= 1) aent <- 0.15
+    opts$alphaenter <- aent
+    selection <- tolower(as.character(unlist(opts$selection %||% "none"))[1])
+    selection <- switch(selection, item_sel_a="none", item_sel_b="backward", item_sel_c="forward", item_sel_d="stepwise", selection)
+    if (isTRUE(opts$backward) && selection %in% c("", "none")) selection <- "backward"
+    if (!selection %in% c("none","backward","forward","stepwise")) {
+        warns$warn(gtxtf("SELECTION=%s is not recognized; no term selection done.", selection), dostop=FALSE); selection <- "none" }
+    boxcox <- tolower(as.character(unlist(opts$boxcox %||% "none"))[1])
+    boxcox <- switch(boxcox, item_bc_a="none", item_bc_b="auto", item_bc_c="log", item_bc_d="sqrt",
+                     item_bc_e="inverse", item_bc_f="custom", boxcox)
+    fixed_lambda <- switch(boxcox, log=0, sqrt=0.5, inverse=-1,
+                           custom=suppressWarnings(as.numeric(unlist(opts$lambda))[1]), NA_real_)
+    if (boxcox == "custom" && !is.finite(fixed_lambda)) {
+        warns$warn(gtxt("BOXCOX=CUSTOM needs LAMBDA=value; no transformation applied."), dostop=FALSE); boxcox <- "none" }
+
+    # Mixture and Taguchi designs have their own analyses
+    if (isTRUE(opts$mixture) || isTRUE(opts$taguchi)) {
+        if (isTRUE(opts$html)) .fa_capture_start()
+        res <- if (isTRUE(opts$mixture)) fa_run_mixture(data, factors, responses, warns, opts, alpha=alpha, conf=conf)
+               else fa_run_taguchi(data, factors, responses, warns, opts, alpha=alpha)
+        if (isTRUE(opts$html)) {
+            .fa_capture$on <- FALSE
+            fa_write_html(opts$htmlpath, gtxtf("Design of Experiments Analysis: %s", paste(responses, collapse=", ")), warns)
+        }
+        return(invisible(res))
+    }
+
+    coding <- fa_build_coding(data, factors, warns, lows=opts$lows, highs=opts$highs,
+                              lowlevels=opts$lowlevels, designtype=designtype,
+                              categorical=opts$categorical, designmodel=opts$designmodel)
+    cd <- fa_code_data(data, coding)
+    blockcol <- NULL
+    for (bn in c("Block","Blocks")) if (bn %in% names(data)) {
+        b <- data[[bn]]; if (length(unique(b[!is.na(b)])) > 1) { blockcol <- as.character(b); break }
+    }
+    runorder <- if ("RunOrder" %in% names(data)) suppressWarnings(as.numeric(data$RunOrder)) else NULL
+    specs <- fa_parse_terms_spec(opts$terms, coding, warns)
+    unknown <- setdiff(names(specs), c(".all", responses))
+    if (length(unknown))
+        warns$warn(gtxtf("TERMS: '%s' is not one of the response variables; that block was ignored.", paste(unknown, collapse="', '")), dostop=FALSE)
+    default_terms <- fa_default_terms(coding, include_ctpt=!isFALSE(opts$centerterm))
+
+    fos <- list()
+    html <- isTRUE(opts$html)
+    if (html) .fa_capture_start()
+    for (r in responses) {
+        spec_r <- specs[[r]]
+        if (is.null(spec_r)) spec_r <- specs[[".all"]]
+        terms <- if (!is.null(spec_r) && length(spec_r)) spec_r else default_terms
+        if (isFALSE(opts$centerterm)) terms <- Filter(function(t) !identical(t, "CTPT"), terms)
+        user_terms <- !is.null(spec_r) && length(spec_r) > 0
+        fo <- tryCatch({
+            trans <- NULL; bcinfo <- NULL
+            if (boxcox != "none") {
+                y0 <- suppressWarnings(as.numeric(data[[r]]))
+                if (any(y0[is.finite(y0)] <= 0)) {
+                    warns$warn(gtxtf("%s: Box-Cox needs every response value > 0; no transformation applied.", r), dostop=FALSE)
+                } else if (boxcox == "auto") {
+                    f0 <- fa_fit(data, cd, coding, r, terms, warns, alpha=alpha, conf=conf, blockcol=blockcol, report_alias=FALSE)
+                    bcinfo <- fa_boxcox(f0$y, f0$X)
+                    if (!is.null(bcinfo) && abs(bcinfo$rounded - 1) > 1e-9) trans <- list(lambda=bcinfo$rounded)
+                } else trans <- list(lambda=fixed_lambda)
+            }
+            f <- if (selection != "none")
+                fa_select(data, cd, coding, r, terms, warns, method=selection, alpha_enter=aent,
+                          alpha_remove=arem, alpha=alpha, conf=conf, blockcol=blockcol,
+                          report_alias=user_terms, trans=trans)
+            else fa_fit(data, cd, coding, r, terms, warns, alpha=alpha, conf=conf, blockcol=blockcol,
+                        report_alias=user_terms, trans=trans)
+            if (!is.null(bcinfo)) f$boxcox <- bcinfo
+            if (is.null(f$selection)) f$selection <- "none"
+            f
+        }, error=function(e) { warns$warn(gtxtf("%s: model could not be fitted: %s", r, conditionMessage(e)), dostop=FALSE); NULL })
+        if (is.null(fo)) next
+        if (fo$n <= 1) { warns$warn(gtxtf("%s: not enough data to fit a model.", r), dostop=FALSE); next }
+        if (fo$df_error == 0)
+            warns$warn(gtxtf("%s: the model uses every degree of freedom (no error term). Tests are replaced by Lenth's method in the charts; add replicates or center points, or remove terms, for full inference.", r), dostop=FALSE)
+        if (!is.null(runorder)) fo$runorder <- runorder[fo$rows]
+        fos[[r]] <- fo
+
+        StartProcedure(gtxtf("DOE Analysis: %s", r), "STATSDOECODED")
+        ok <- tryCatch({
+            rc <- tryCatch(fa_resid_checks(fo), error=function(e) NULL)
+            if (!isFALSE(opts$tables) && !isFALSE(opts$interpret))
+                tryCatch(.fa_show_interpret(fa_interpret(fo, rc), gtxtf("Summary of Results: %s", r)),
+                         error=function(e) warns$warn(gtxtf("%s: summary could not be written: %s", r, conditionMessage(e)), dostop=FALSE))
+            if (!isFALSE(opts$tables)) fa_display_tables(fo, opts)
+            if (!isFALSE(opts$tables) && isTRUE(opts$diagnostics)) fa_display_residchecks(fo, rc)
+            pts <- fa_parse_predict(opts$predict, fo$coding, if (r == responses[1]) warns else list(warn=function(...) NULL))
+            if (length(pts)) fa_display_predict(fo, pts, conf)
+            if (isTRUE(opts$pareto))       fa_plot_pareto(fo)
+            if (isTRUE(opts$effectsplot))  fa_plot_effects_normal(fo)
+            if (isTRUE(opts$maineffects))  fa_plot_main_effects(fo)
+            if (isTRUE(opts$interactions)) fa_plot_interactions(fo)
+            if (isTRUE(opts$cubeplot))     fa_plot_cube(fo)
+            if (isTRUE(opts$contourplot))  fa_plot_contours(fo)
+            if (isTRUE(opts$surfaceplot))  fa_plot_surfaces(fo)
+            if (isTRUE(opts$residualplots)) fa_plot_residuals(fo)
+            if (isTRUE(opts$canonical) && !isFALSE(opts$tables)) fa_display_canonical(fo)
+            if (isTRUE(opts$grouping) && !isFALSE(opts$tables)) fa_display_grouping(fo)
+            TRUE
+        }, error=function(e) { warns$warn(gtxtf("%s: output error: %s", r, conditionMessage(e)), dostop=FALSE); FALSE })
+        tryCatch(spsspkg.EndProcedure(), error=function(e) NULL)
+    }
+
+    if (isTRUE(opts$optimize) && length(fos)) {
+        StartProcedure(gtxt("Response Optimization"), "STATSDOEOPTIMIZE")
+        tryCatch({
+            pars <- fa_opt_params(fos, opts$goals, opts$lowers, opts$targets, opts$uppers,
+                                  opts$weights, opts$importance, warns)
+            opt  <- fa_optimize(fos, pars, .fa_parse_pairs(opts$holds), warns,
+                                nsolutions=max(1, suppressWarnings(as.integer(opts$nsolutions)), na.rm=TRUE))
+            if (!isFALSE(opts$interpret))
+                tryCatch(.fa_show_interpret(fa_interpret_optimizer(fos, pars, opt), gtxt("Summary of Optimization")), error=function(e) NULL)
+            fa_display_optimizer(fos, pars, opt, conf=conf)
+            nconf <- suppressWarnings(as.integer(unlist(opts$confirmruns))[1])
+            if (is.finite(nconf) && nconf >= 1) fa_display_confirm(fos, opt, nconf, conf)
+            if (isTRUE(opts$robust)) fa_display_robust(fos, pars, opt, opts$robustsd, warns)
+            fa_plot_optimizer(fos, pars, opt)
+            if (isTRUE(opts$overlay)) fa_plot_overlay(fos, pars, opt)
+        }, error=function(e) warns$warn(gtxtf("Optimizer error: %s", conditionMessage(e)), dostop=FALSE))
+        tryCatch(spsspkg.EndProcedure(), error=function(e) NULL)
+    }
+    if (html) {
+        .fa_capture$on <- FALSE
+        fa_write_html(opts$htmlpath, gtxtf("Design of Experiments Analysis: %s", paste(responses, collapse=", ")), warns)
+    }
+    invisible(fos)
+}
+
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# ADDITIONAL ANALYSES: pairwise grouping, canonical analysis, surface and
+# overlaid-contour plots, confirmation runs, robustness of the optimum
+# ════════════════════════════════════════════════════════════════════════════
+
+# Tukey pairwise comparison of the fitted level means of each categorical
+# factor (compact letter display: levels sharing a letter do not differ).
+fa_display_grouping <- function(fo) {
+    if (fo$df_error < 1) return(invisible(NULL))
+    coding <- fo$coding
+    mains <- unlist(Filter(function(t) !identical(t, "CTPT") && length(t) == 1, fo$terms))
+    cats <- mains[vapply(coding$info[mains], function(z) z$type == "categorical", logical(1))]
+    for (i in cats) {
+        z <- coding$info[[i]]
+        lv <- z$levels; k <- length(lv)
+        m  <- vapply(lv, function(l) .fa_marginal(fo, setNames(list(l), as.character(i))), numeric(1))
+        xcol <- fo$cd[[paste0("X", i)]]
+        nl <- vapply(seq_len(k), function(j) {
+            if (is.factor(xcol)) sum(as.character(xcol) == lv[j]) else sum(xcol == (if (j == 1) -1 else 1))
+        }, numeric(1))
+        crit <- qtukey(1 - fo$alpha, k, fo$df_error) / sqrt(2)
+        o <- order(-m); ms <- m[o]; ns <- nl[o]
+        sig <- matrix(FALSE, k, k)
+        for (a in seq_len(k)) for (b in seq_len(k)) if (a != b)
+            sig[a, b] <- abs(ms[a] - ms[b]) > crit * fo$s * sqrt(1 / max(1, ns[a]) + 1 / max(1, ns[b]))
+        letters_out <- rep("", k); groups <- list()
+        for (a in seq_len(k)) {
+            g <- which(!sig[a, ]); g <- g[g >= a]
+            blk <- a:max(g)
+            if (all(!sig[blk, blk])) {
+                if (!any(vapply(groups, function(q) all(blk %in% q), logical(1)))) groups[[length(groups) + 1]] <- blk
+            } else groups[[length(groups) + 1]] <- g
+        }
+        for (gi in seq_along(groups)) for (a in groups[[gi]])
+            letters_out[a] <- paste0(letters_out[a], LETTERS[(gi - 1) %% 26 + 1])
+        df <- data.frame(ns, .fa_num(fa_untransform(fo, ms), 5), letters_out, stringsAsFactors=FALSE)
+        names(df) <- c(gtxt("N"), gtxt("Fitted mean"), gtxt("Grouping"))
+        .fa_show(df, gtxtf("Pairwise Comparison (Tukey) of %s: %s", z$name, fo$resp), "DOEGROUPING",
+                 outline=gtxt("Pairwise Comparison"), rowlabels=lv[o],
+                 caption=gtxtf("Levels that share a letter are not significantly different (family alpha = %s). Means are fitted means averaged over the other factors.", format(fo$alpha)))
+    }
+    invisible(NULL)
+}
+
+# second-order structure of the fitted surface at fixed categorical levels
+.fa_quad_parts <- function(fo, num, catfix) {
+    base <- .fa_base_row(fo$coding)
+    for (nm in names(catfix)) base <- .fa_set(base, as.integer(nm), fo$coding, catfix[[nm]])
+    f <- function(x) { nd <- base; for (j in seq_along(num)) nd[[paste0("X", num[j])]] <- x[j]; fa_predict(fo, nd) }
+    q <- length(num); f0 <- f(rep(0, q)); b <- numeric(q); B <- matrix(0, q, q)
+    fp <- fm <- numeric(q)
+    for (i in seq_len(q)) {
+        e <- rep(0, q); e[i] <- 1
+        fp[i] <- f(e); fm[i] <- f(-e)
+        b[i] <- (fp[i] - fm[i]) / 2
+        B[i, i] <- (fp[i] + fm[i] - 2 * f0) / 2
+    }
+    if (q >= 2) for (i in 1:(q - 1)) for (j in (i + 1):q) {
+        e <- rep(0, q); e[c(i, j)] <- 1
+        B[i, j] <- B[j, i] <- (f(e) - fp[i] - fp[j] + f0) / 2
+    }
+    list(f0=f0, b=b, B=B, f=f)
+}
+
+# Canonical analysis of a second-order surface: stationary point, its
+# predicted value and the eigenvalues that tell maximum / minimum / saddle.
+fa_display_canonical <- function(fo) {
+    coding <- fo$coding
+    if (.fa_has_ctpt(fo)) return(invisible(NULL))
+    num <- .fa_factors_in_model(fo)
+    num <- num[vapply(coding$info[num], function(z) z$type == "numeric", logical(1))]
+    has_sq <- any(vapply(fo$terms, .fa_is_square, logical(1)))
+    if (length(num) < 1 || !has_sq) return(invisible(NULL))
+    cat_idx <- which(vapply(coding$info, function(z) z$type == "categorical", logical(1)))
+    combos <- if (length(cat_idx)) expand.grid(lapply(coding$info[cat_idx], function(z) z$levels), stringsAsFactors=FALSE)
+              else data.frame(dummy=1)
+    rows <- list(); labs <- character(0)
+    for (ci in seq_len(nrow(combos))) {
+        catfix <- if (length(cat_idx)) setNames(as.list(unlist(combos[ci, ])), as.character(cat_idx)) else list()
+        qp <- .fa_quad_parts(fo, num, catfix)
+        ev <- eigen(qp$B, symmetric=TRUE)$values
+        xs <- tryCatch(-0.5 * solve(qp$B, qp$b), error=function(e) rep(NA_real_, length(num)))
+        ys <- if (all(is.finite(xs))) qp$f(xs) else NA
+        tol <- 1e-6 * max(1, abs(ev))
+        nature <- if (any(abs(ev) < tol)) gtxt("ridge (a near-zero eigenvalue)")
+                  else if (all(ev < 0)) gtxt("maximum") else if (all(ev > 0)) gtxt("minimum") else gtxt("saddle point")
+        rng <- vapply(num, function(i) { r <- range(fo$cd[[paste0("X", i)]], na.rm=TRUE); max(1, abs(r)) }, numeric(1))
+        inside <- all(is.finite(xs)) && all(abs(xs) <= rng + 1e-9)
+        row <- list()
+        for (j in seq_along(num)) { z <- coding$info[[num[j]]]; row[[z$name]] <- .fa_num(z$mid + xs[j] * z$half, 5) }
+        row[[gtxt("Predicted")]] <- .fa_num(fa_untransform(fo, ys), 5)
+        row[[gtxt("Eigenvalues")]] <- paste(.fa_num(ev, 4), collapse="  ")
+        row[[gtxt("Nature")]] <- nature
+        row[[gtxt("Inside design region")]] <- if (inside) gtxt("Yes") else gtxt("No")
+        rows[[ci]] <- as.data.frame(row, stringsAsFactors=FALSE, check.names=FALSE)
+        labs <- c(labs, if (length(cat_idx)) paste(paste0(names(coding$info)[cat_idx], "=", unlist(combos[ci, ])), collapse=", ") else fo$resp)
+    }
+    .fa_show(do.call(rbind, rows), gtxtf("Canonical Analysis: %s", fo$resp), "DOECANONICAL",
+             outline=gtxt("Canonical Analysis"), rowlabels=labs,
+             caption=gtxt("Stationary point of the fitted second-order surface (factor settings in natural units). All eigenvalues negative = maximum, all positive = minimum, mixed signs = saddle. If the point lies outside the design region, move the experiment in that direction rather than extrapolating."))
+    invisible(NULL)
+}
+
+fa_plot_surfaces <- function(fo, maxpairs=6) {
+    coding <- fo$coding
+    fx <- .fa_factors_in_model(fo)
+    fx <- fx[vapply(coding$info[fx], function(z) z$type == "numeric", logical(1))]
+    if (length(fx) < 2) return(invisible(NULL))
+    pairs <- combn(fx, 2, simplify=FALSE)[seq_len(min(maxpairs, choose(length(fx), 2)))]
+    rng <- function(i) { r <- range(fo$cd[[paste0("X", i)]], na.rm=TRUE); c(min(-1, r[1]), max(1, r[2])) }
+    np <- length(pairs); nc <- min(np, 3); nr <- ceiling(np / nc)
+    .fa_try_ip(.fa_ip_contours(fo, pairs, surface=TRUE))
+    .doe_submit_plot({
+        op <- par(mfrow=c(nr, nc), mar=c(1.5, 1.5, 2.5, 1), oma=c(0, 0, 2.5, 0), family="sans"); on.exit(par(op))
+        for (pr in pairs) {
+            a <- pr[1]; b <- pr[2]
+            ga <- seq(rng(a)[1], rng(a)[2], length.out=31); gb <- seq(rng(b)[1], rng(b)[2], length.out=31)
+            g  <- expand.grid(ga, gb)
+            nd <- .fa_base_row(coding)[rep(1, nrow(g)), , drop=FALSE]
+            nd[[paste0("X", a)]] <- g[[1]]; nd[[paste0("X", b)]] <- g[[2]]
+            z <- matrix(fa_predict(fo, nd), 31, 31)
+            za <- coding$info[[a]]; zb <- coding$info[[b]]
+            zf <- (z[-1, -1] + z[-1, -31] + z[-31, -1] + z[-31, -31]) / 4
+            cols <- grDevices::hcl.colors(40, "Blues 3", rev=TRUE)
+            ci <- cut(zf, 40, labels=FALSE)
+            persp(za$mid + ga * za$half, zb$mid + gb * zb$half, z, theta=35, phi=25, expand=0.7,
+                  col=cols[ci], border="grey40", lwd=0.3, ticktype="detailed",
+                  xlab=za$name, ylab=zb$name, zlab=fo$resp, main=paste(za$name, "x", zb$name), cex.main=0.95, cex.axis=0.7)
+        }
+        mtext(gtxtf("Response Surface of Fitted %s (other factors at center / first level)", fo$resp), outer=TRUE, line=0.8, font=2)
+    }, width=min(1400, 440 * nc + 40), height=420 * nr + 60)
+}
+
+# Overlaid contour plot: region where every response meets its limits
+fa_plot_overlay <- function(fos, pars, opt) {
+    if (!length(opt$solutions)) return(invisible(NULL))
+    coding <- fos[[1]]$coding; best <- opt$solutions[[1]]
+    num <- which(vapply(coding$info, function(z) z$type == "numeric", logical(1)))
+    free <- setdiff(num, as.integer(names(opt$holds)))
+    if (length(free) < 2) return(invisible(NULL))
+    pairs <- combn(free, 2, simplify=FALSE)[seq_len(min(3, choose(length(free), 2)))]
+    rng <- function(i) { r <- range(unlist(lapply(fos, function(f) f$cd[[paste0("X", i)]])), na.rm=TRUE); c(min(-1, r[1]), max(1, r[2])) }
+    cols <- c("#4C78A8", "#E45756", "#54A24B", "#B279A2", "#F58518", "#72B7B2", "#9D755D", "#BAB0AC")
+    np <- length(pairs)
+    .fa_try_ip(.fa_ip_overlay(fos, pars, opt, pairs))
+    .doe_submit_plot({
+        op <- par(mfrow=c(1, np), mar=c(4.5, 4.5, 2.8, 1), oma=c(4, 0, 2.5, 0), family="sans"); on.exit(par(op))
+        for (pr in pairs) {
+            a <- pr[1]; b <- pr[2]
+            ga <- seq(rng(a)[1], rng(a)[2], length.out=81); gb <- seq(rng(b)[1], rng(b)[2], length.out=81)
+            g  <- expand.grid(ga, gb)
+            nd <- best$nd[rep(1, nrow(g)), , drop=FALSE]
+            nd[[paste0("X", a)]] <- g[[1]]; nd[[paste0("X", b)]] <- g[[2]]
+            if (opt$uses_ctpt) nd$CtPt <- 0
+            za <- coding$info[[a]]; zb <- coding$info[[b]]
+            xa <- za$mid + ga * za$half; xb <- zb$mid + gb * zb$half
+            ok <- rep(TRUE, nrow(g))
+            plot(range(xa), range(xb), type="n", xlab=za$name, ylab=zb$name, main=paste(za$name, "x", zb$name), cex.main=0.95)
+            Z <- list()
+            for (k in seq_along(fos)) {
+                y <- fa_predict_orig(fos[[k]], nd); p <- pars[[k]]
+                lo <- if (p$goal == "minimize") -Inf else p$L; hi <- if (p$goal == "maximize") Inf else p$U
+                ok <- ok & y >= lo & y <= hi
+                Z[[k]] <- matrix(y, 81, 81)
+            }
+            image(xa, xb, matrix(as.numeric(ok), 81, 81), col=c("grey85", "white"), add=TRUE, breaks=c(-0.5, 0.5, 1.5))
+            for (k in seq_along(fos)) {
+                p <- pars[[k]]; lv <- na.omit(c(if (p$goal != "minimize") p$L, if (p$goal != "maximize") p$U))
+                if (length(lv)) contour(xa, xb, Z[[k]], levels=lv, add=TRUE, col=cols[(k - 1) %% 8 + 1], lwd=2, labcex=0.7)
+            }
+            points(za$mid + best$xnum[match(a, opt$num)] * za$half, zb$mid + best$xnum[match(b, opt$num)] * zb$half,
+                   pch=4, cex=1.6, lwd=2)
+            box()
+        }
+        mtext(gtxt("Overlaid Contours: white = every response within its limits; x = optimal setting (other factors at the optimum)"),
+              outer=TRUE, line=0.8, font=2, cex=0.9)
+        par(xpd=NA)
+        legend("bottom", inset=c(0, -0.02), horiz=TRUE, bty="n", lwd=2, col=cols[(seq_along(fos) - 1) %% 8 + 1],
+               legend=vapply(fos, function(f) f$resp, character(1)), cex=0.85, xpd=NA)
+    }, width=max(700, 520 * np), height=560)
+}
+
+# Prediction interval for the MEAN of n confirmation runs at the optimum
+fa_display_confirm <- function(fos, opt, n, conf=0.95) {
+    if (!length(opt$solutions)) return(invisible(NULL))
+    c1 <- opt$solutions[[1]]
+    rows <- lapply(fos, function(f) {
+        ps <- fa_predict(f, c1$nd, se=TRUE)
+        if (f$df_error < 1) return(data.frame("", "", stringsAsFactors=FALSE))
+        tq <- qt(1 - (1 - conf) / 2, f$df_error)
+        pi <- ps$fit + c(-1, 1) * tq * sqrt(ps$se^2 + f$mse / n)
+        pi <- sort(fa_untransform(f, pi))
+        data.frame(.fa_num(fa_untransform(f, ps$fit), 5), paste0("(", .fa_num(pi[1], 5), ", ", .fa_num(pi[2], 5), ")"),
+                   stringsAsFactors=FALSE)
+    })
+    df <- do.call(rbind, rows); names(df) <- c(gtxt("Predicted"), gtxtf("%s%% interval for the average of %d runs", format(100 * conf), n))
+    .fa_show(df, gtxtf("Confirmation Runs (n = %d) at the Optimal Settings", n), "DOECONFIRM",
+             outline=gtxt("Confirmation Runs"), rowlabels=vapply(fos, function(f) f$resp, character(1)),
+             caption=gtxt("If the average of the confirmation runs falls inside this interval, the model's prediction is confirmed; if not, the model does not describe the process well at these settings."))
+    invisible(NULL)
+}
+
+# Monte Carlo robustness of the optimum: numeric settings vary with a
+# standard deviation of `sdpct` percent of their half-range (setting error),
+# and each simulated run adds residual noise (model S).
+fa_display_robust <- function(fos, pars, opt, sdpct=5, warns, nsim=2000) {
+    if (!length(opt$solutions)) return(invisible(NULL))
+    sdpct <- suppressWarnings(as.numeric(unlist(sdpct))[1]); if (!is.finite(sdpct) || sdpct <= 0) sdpct <- 5
+    best <- opt$solutions[[1]]; coding <- fos[[1]]$coding
+    if (opt$uses_ctpt) {
+        warns$warn(gtxt("Robustness check skipped: a center-point (curvature) model cannot predict between the corners and the center point."), dostop=FALSE)
+        return(invisible(NULL))
+    }
+    set.seed(20260923)
+    nd <- best$nd[rep(1, nsim), , drop=FALSE]
+    for (j in seq_along(opt$num)) {
+        i <- opt$num[j]
+        if (!is.null(opt$holds[[as.character(i)]])) next
+        r <- range(unlist(lapply(fos, function(f) f$cd[[paste0("X", i)]])), na.rm=TRUE); r <- c(min(-1, r[1]), max(1, r[2]))
+        nd[[paste0("X", i)]] <- pmin(r[2], pmax(r[1], best$xnum[j] + rnorm(nsim, 0, sdpct / 100)))
+    }
+    P  <- sapply(fos, function(f) fa_predict(f, nd)); P <- matrix(P, nrow=nsim)
+    Yr <- sapply(seq_along(fos), function(k) fa_untransform(fos[[k]], P[, k] + rnorm(nsim, 0, if (is.finite(fos[[k]]$s)) fos[[k]]$s else 0)))
+    Yr <- matrix(Yr, nrow=nsim)
+    Ps <- sapply(seq_along(fos), function(k) fa_untransform(fos[[k]], P[, k])); Ps <- matrix(Ps, nrow=nsim)
+    within <- sapply(seq_along(fos), function(k) {
+        p <- pars[[k]]; y <- Yr[, k]
+        lo <- if (p$goal == "minimize") -Inf else p$L; hi <- if (p$goal == "maximize") Inf else p$U
+        y >= lo & y <= hi
+    }); within <- matrix(within, nrow=nsim)
+    D <- apply(Ps, 1, function(pr) .fa_composite(pr, pars)$D)
+    rows <- lapply(seq_along(fos), function(k) data.frame(
+        .fa_num(mean(Ps[, k]), 5), .fa_num(sd(Ps[, k]), 3), .fa_num(sd(Yr[, k]), 3),
+        paste0("(", .fa_num(quantile(Yr[, k], 0.05), 5), ", ", .fa_num(quantile(Yr[, k], 0.95), 5), ")"),
+        paste0(formatC(100 * mean(within[, k]), digits=1, format="f"), "%"), stringsAsFactors=FALSE))
+    df <- do.call(rbind, rows)
+    last <- data.frame(.fa_num(mean(D), 4), .fa_num(sd(D), 3), "", "",
+        paste0(formatC(100 * mean(apply(within, 1, all)), digits=1, format="f"), "%"), stringsAsFactors=FALSE)
+    names(last) <- names(df)
+    df <- rbind(df, last)
+    names(df) <- c(gtxt("Mean prediction"), gtxt("SD from setting error"), gtxt("SD incl. run-to-run"),
+                   gtxt("90% range of runs"), gtxt("Runs within limits"))
+    .fa_show(df, gtxt("Robustness of the Optimal Settings"), "DOEROBUST", outline=gtxt("Robustness"),
+             rowlabels=c(vapply(fos, function(f) f$resp, character(1)), gtxt("Composite D / all responses")),
+             caption=gtxtf("%d simulated runs; each numeric setting varies with SD = %s%% of its half-range around the optimum (held factors fixed), plus residual variation (model S). A setting is robust when the SD from setting error is small and most runs stay within the limits.", nsim, format(sdpct)))
+    invisible(NULL)
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# MIXTURE DESIGNS: simplex-lattice / simplex-centroid generation and Scheffe
+# model analysis (Cornell, "Experiments with Mixtures")
+# ════════════════════════════════════════════════════════════════════════════
+
+# Simplex-lattice {q, m}: every blend whose proportions are multiples of 1/m.
+# Simplex-centroid: the centroid of every non-empty subset of components.
+# augment=TRUE adds the q axial blends and the overall centroid (if absent).
+generate_simplex <- function(spec, variables, type="lattice", degree=2, augment=FALSE,
+                             mixturesum=1, warns) {
+    q <- length(variables)
+    if (q < 2) warns$warn(gtxt("A mixture design needs at least 2 components."), dostop=TRUE)
+    if (q > 12) warns$warn(gtxt("Simplex designs are limited to 12 components."), dostop=TRUE)
+    if (type == "lattice") {
+        m <- suppressWarnings(as.integer(degree)); if (!is.finite(m) || m < 1) m <- 2
+        if (m > 10) warns$warn(gtxt("Lattice degree must be between 1 and 10."), dostop=TRUE)
+        pts <- as.matrix(expand.grid(rep(list(0:m), q)))
+        pts <- pts[rowSums(pts) == m, , drop=FALSE] / m
+        # conventional order: vertices first, then by number of nonzero components
+        pts <- pts[order(rowSums(pts > 0), -apply(pts, 1, max)), , drop=FALSE]
+    } else {
+        subs <- unlist(lapply(seq_len(q), function(k) combn(q, k, simplify=FALSE)), recursive=FALSE)
+        pts <- t(vapply(subs, function(s) { v <- rep(0, q); v[s] <- 1 / length(s); v }, numeric(q)))
+    }
+    ptype <- apply(pts, 1, function(r) if (sum(r > 0) == 1) 1 else if (sum(r > 0) == q && max(abs(r - 1/q)) < 1e-12) 0 else 2)
+    if (isTRUE(augment)) {
+        ax <- t(vapply(seq_len(q), function(i) { v <- rep(1 / (2 * q), q); v[i] <- (q + 1) / (2 * q); v }, numeric(q)))
+        pts <- rbind(pts, ax); ptype <- c(ptype, rep(-1, q))
+        if (!any(apply(pts, 1, function(r) max(abs(r - 1/q)) < 1e-12))) { pts <- rbind(pts, rep(1/q, q)); ptype <- c(ptype, 0) }
+    }
+    lows <- suppressWarnings(as.numeric(spec$lows)); lows[!is.finite(lows)] <- 0
+    total <- suppressWarnings(as.numeric(mixturesum)); if (!is.finite(total) || total <= 0) total <- 1
+    if (sum(lows) >= total) warns$warn(gtxt("The component lower bounds add up to the mixture total or more; no blends are possible."), dostop=TRUE)
+    real <- sweep(pts * (total - sum(lows)), 2, lows, "+")
+    df <- as.data.frame(real); names(df) <- as.character(variables)
+    df <- cbind(Reps=1, df, PtType=ptype)
+    list(design=df, D=NA, A=NA, Ge=NA, Dea=NA)
+}
+
+# ── Mixture analysis ─────────────────────────────────────────────────────────
+.fa_mix_terms <- function(q, model) {
+    model <- tolower(model)
+    tt <- lapply(seq_len(q), function(i) list(type="lin", idx=i))
+    if (model %in% c("quadratic","specialcubic","fullcubic","cubic") && q >= 2)
+        tt <- c(tt, lapply(combn(q, 2, simplify=FALSE), function(p) list(type="quad", idx=p)))
+    if (model %in% c("fullcubic","cubic") && q >= 2)
+        tt <- c(tt, lapply(combn(q, 2, simplify=FALSE), function(p) list(type="cubicdiff", idx=p)))
+    if (model %in% c("specialcubic","fullcubic","cubic") && q >= 3)
+        tt <- c(tt, lapply(combn(q, 3, simplify=FALSE), function(p) list(type="spcubic", idx=p)))
+    tt
+}
+.fa_mix_cols <- function(P, tt, Z=NULL) {
+    X <- sapply(tt, function(t) switch(t$type,
+        lin=P[, t$idx], quad=P[, t$idx[1]] * P[, t$idx[2]],
+        cubicdiff=P[, t$idx[1]] * P[, t$idx[2]] * (P[, t$idx[1]] - P[, t$idx[2]]),
+        spcubic=P[, t$idx[1]] * P[, t$idx[2]] * P[, t$idx[3]]))
+    X <- matrix(X, nrow=nrow(P))
+    if (!is.null(Z) && ncol(Z)) X <- cbind(X, Z)
+    X
+}
+.fa_mix_label <- function(t, nm) switch(t$type,
+    lin=nm[t$idx], quad=paste(nm[t$idx], collapse="*"),
+    cubicdiff=paste0(nm[t$idx[1]], "*", nm[t$idx[2]], "*(", nm[t$idx[1]], "-", nm[t$idx[2]], ")"),
+    spcubic=paste(nm[t$idx], collapse="*"))
+
+fa_mix_fit <- function(y, P, tt, comps, Z=NULL, znames=character(0), resp, warns) {
+    ok <- is.finite(y) & stats::complete.cases(P) & (if (is.null(Z)) TRUE else stats::complete.cases(Z))
+    y <- y[ok]; P <- P[ok, , drop=FALSE]; if (!is.null(Z)) Z <- Z[ok, , drop=FALSE]
+    removed <- character(0)
+    repeat {
+        X <- .fa_mix_cols(P, tt, Z)
+        if (qr(X, tol=1e-7)$rank == ncol(X)) break
+        bad <- NA
+        for (j in 2:ncol(X)) if (qr(X[, 1:j, drop=FALSE], tol=1e-7)$rank < j) { bad <- j; break }
+        if (is.na(bad) || bad > length(tt)) { warns$warn(gtxtf("%s: the mixture model could not be estimated.", resp), dostop=FALSE); return(NULL) }
+        removed <- c(removed, .fa_mix_label(tt[[bad]], comps)); tt <- tt[-bad]
+    }
+    if (length(removed))
+        warns$warn(gtxtf("%s: not estimable from this design and removed: %s", resp, paste(removed, collapse=", ")), dostop=FALSE)
+    n <- nrow(X); p <- ncol(X)
+    fit <- lm.fit(X, y); b <- fit$coefficients; res <- fit$residuals
+    dfe <- n - p; sse <- sum(res^2); sst <- sum((y - mean(y))^2)
+    mse <- if (dfe > 0) sse / dfe else NA_real_
+    XtXi <- chol2inv(qr.R(qr(X)))
+    se <- if (dfe > 0) sqrt(diag(XtXi) * mse) else rep(NA_real_, p)
+    h <- rowSums((X %*% XtXi) * X)
+    press <- if (all(h < 1 - 1e-10)) sum((res / (1 - h))^2) else NA_real_
+    list(resp=resp, y=y, y_orig=y, P=P, Z=Z, znames=znames, tt=tt, X=X, coef=b, se=se, t=b/se,
+         p=if (dfe > 0) 2 * pt(-abs(b / se), dfe) else rep(NA_real_, p),
+         df_error=dfe, sse=sse, sst=sst, mse=mse, s=sqrt(mse), XtXi=XtXi, hat=h, press=press,
+         fitted=as.vector(X %*% b), resid=res, n=n, lambda=NA_real_, removed=removed)
+}
+
+fa_mix_predict <- function(mo, P, Z=NULL, se=FALSE) {
+    X <- .fa_mix_cols(P, mo$tt, if (!is.null(mo$Z)) (if (is.null(Z)) matrix(0, nrow(P), ncol(mo$Z)) else Z) else NULL)
+    fit <- as.vector(X %*% mo$coef)
+    if (!se) return(fit)
+    list(fit=fit, se=sqrt(pmax(0, rowSums((X %*% mo$XtXi) * X))) * mo$s)
+}
+
+fa_mix_anova <- function(mo) {
+    q <- sum(vapply(mo$tt, function(t) t$type == "lin", logical(1)))
+    rows <- list()
+    add <- function(src, df, ss, f=NA, p=NA) rows[[length(rows) + 1]] <<- data.frame(Source=src, DF=df, SS=ss,
+        MS=if (df > 0) ss / df else NA, F=f, P=p, stringsAsFactors=FALSE)
+    ftest <- function(ss, df) { if (mo$df_error > 0 && df > 0) { f <- (ss / df) / mo$mse; c(f, pf(f, df, mo$df_error, lower.tail=FALSE)) } else c(NA, NA) }
+    ssr <- mo$sst - mo$sse; dfr <- ncol(mo$X) - 1
+    ft <- ftest(ssr, dfr); add(gtxt("Regression"), dfr, ssr, ft[1], ft[2])
+    types <- vapply(mo$tt, function(t) t$type, character(1))
+    # linear blending: are the pure-component responses different?
+    lin <- which(types == "lin")
+    Xr <- cbind(1, mo$X[, -lin, drop=FALSE])
+    ss <- .fa_sse(Xr, mo$y) - mo$sse; ft <- ftest(ss, q - 1)
+    add(gtxt("  Linear"), q - 1, ss, ft[1], ft[2])
+    lab <- c(quad=gtxt("  Quadratic"), cubicdiff=gtxt("  Full cubic"), spcubic=gtxt("  Special cubic"))
+    for (ty in c("quad","spcubic","cubicdiff")) {
+        idx <- which(types == ty); if (!length(idx)) next
+        ss <- .fa_sse(mo$X[, -idx, drop=FALSE], mo$y) - mo$sse; ft <- ftest(ss, length(idx))
+        add(lab[[ty]], length(idx), ss, ft[1], ft[2])
+        for (i in idx) { s1 <- .fa_sse(mo$X[, -i, drop=FALSE], mo$y) - mo$sse; f1 <- ftest(s1, 1)
+            add(paste0("    ", .fa_mix_label(mo$tt[[i]], mo$comps)), 1, s1, f1[1], f1[2]) }
+    }
+    if (length(mo$znames)) {
+        zi <- (length(mo$tt) + 1):ncol(mo$X)
+        ss <- .fa_sse(mo$X[, -zi, drop=FALSE], mo$y) - mo$sse; ft <- ftest(ss, length(zi))
+        add(gtxt("  Process variables"), length(zi), ss, ft[1], ft[2])
+    }
+    add(gtxt("Error"), mo$df_error, mo$sse)
+    key <- apply(round(cbind(mo$P, if (!is.null(mo$Z)) mo$Z), 8), 1, paste, collapse="|")
+    g <- split(mo$y, key); pedf <- sum(lengths(g) - 1)
+    if (pedf > 0 && mo$df_error - pedf > 0) {
+        pess <- sum(vapply(g, function(v) sum((v - mean(v))^2), numeric(1)))
+        lofdf <- mo$df_error - pedf; lofss <- mo$sse - pess
+        f <- (lofss / lofdf) / (pess / pedf)
+        add(gtxt("  Lack-of-Fit"), lofdf, lofss, f, if (pess > 0) pf(f, lofdf, pedf, lower.tail=FALSE) else NA)
+        add(gtxt("  Pure Error"), pedf, pess)
+    }
+    add(gtxt("Total"), mo$n - 1, mo$sst)
+    out <- do.call(rbind, rows); out$MS[out$Source == gtxt("Total")] <- NA
+    out
+}
+
+fa_run_mixture <- function(data, factors, responses, warns, opts, alpha=0.05, conf=0.95) {
+    flags <- as.logical(unlist(opts$mixflags))
+    if (!length(flags) || all(!flags, na.rm=TRUE)) flags <- vapply(factors, function(f) is.numeric(data[[f]]), logical(1))
+    flags <- rep(flags, length.out=length(factors)); flags[is.na(flags)] <- FALSE
+    comps <- factors[flags]; procs <- factors[!flags]
+    if (length(comps) < 2) stop(gtxt("A mixture analysis needs at least 2 mixture components (MIXTURES=YES)."), call.=FALSE)
+    A <- as.matrix(data[, comps, drop=FALSE]); storage.mode(A) <- "double"
+    tot <- rowSums(A)
+    if (any(!is.finite(tot) | tot <= 0)) stop(gtxt("Every run needs positive, non-missing component amounts."), call.=FALSE)
+    total <- stats::median(tot)
+    if (max(abs(tot - stats::median(tot))) > 1e-4 * max(1, stats::median(tot)))
+        warns$warn(gtxt("Component totals differ between runs; the analysis uses proportions (each run divided by its total)."), dostop=FALSE)
+    Pr <- A / tot
+    L  <- apply(Pr, 2, min); U <- apply(Pr, 2, max)
+    mode <- tolower(as.character(unlist(opts$mixcomps %||% "auto"))[1])
+    mode <- switch(mode, item_mc_a="auto", item_mc_b="pseudo", item_mc_c="proportions", mode)
+    use_pseudo <- (mode == "pseudo") || (mode == "auto" && any(L > 1e-9) && sum(L) < 1 - 1e-9)
+    if (!use_pseudo) L <- rep(0, length(comps))
+    to_p  <- function(Pr) sweep(Pr, 2, L, "-") / (1 - sum(L))
+    from_p <- function(P) sweep(P * (1 - sum(L)), 2, L, "+")
+    P <- to_p(Pr)
+    Z <- NULL; zinfo <- list()
+    if (length(procs)) {
+        Z <- sapply(procs, function(f) {
+            x <- data[[f]]
+            if (is.numeric(x)) { lo <- min(x, na.rm=TRUE); hi <- max(x, na.rm=TRUE); zinfo[[f]] <<- list(lo=lo, hi=hi); (x - (lo + hi) / 2) / ((hi - lo) / 2) }
+            else { lv <- unique(as.character(x)); zinfo[[f]] <<- list(levels=lv); ifelse(as.character(x) == lv[1], -1, 1) }
+        })
+        Z <- matrix(Z, nrow=nrow(data)); colnames(Z) <- procs
+    }
+    model <- tolower(as.character(unlist(opts$mixmodel %||% "quadratic"))[1])
+    model <- switch(model, item_mm_a="linear", item_mm_b="quadratic", item_mm_c="specialcubic", item_mm_d="fullcubic", model)
+    if (!model %in% c("linear","quadratic","specialcubic","fullcubic","cubic")) model <- "quadratic"
+    tt <- .fa_mix_terms(length(comps), model)
+    mos <- list()
+    for (r in responses) {
+        mo <- fa_mix_fit(suppressWarnings(as.numeric(data[[r]])), P, tt, comps, Z, procs, r, warns)
+        if (is.null(mo)) next
+        mo$comps <- comps; mo$L <- L; mo$U <- U; mo$pseudo <- use_pseudo; mo$total <- total
+        mo$to_p <- to_p; mo$from_p <- from_p; mo$zinfo <- zinfo
+        mos[[r]] <- mo
+        StartProcedure(gtxtf("Mixture Analysis: %s", r), "STATSDOEMIXTURE")
+        tryCatch({
+            if (!isFALSE(opts$tables)) {
+                if (!isFALSE(opts$interpret))
+                    tryCatch(.fa_show_interpret(fa_interpret_mixture(mo, alpha), gtxtf("Summary of Results: %s", r)), error=function(e) NULL)
+                ci <- data.frame(.fa_num(L * total, 5), .fa_num(U * total, 5), stringsAsFactors=FALSE)
+                names(ci) <- c(gtxt("Lowest in data"), gtxt("Highest in data"))
+                .fa_show(ci, gtxtf("Mixture Components: %s", r), "DOEMIXCOMP", outline=gtxt("Mixture Components"),
+                         rowlabels=comps,
+                         caption=if (use_pseudo) gtxtf("Coefficients are in pseudo-components: (proportion - lower bound) / %s.", .fa_num(1 - sum(L), 5))
+                                 else gtxt("Coefficients are in component proportions (each blend scaled to sum to 1)."))
+                lab <- c(vapply(mo$tt, .fa_mix_label, character(1), nm=comps), mo$znames)
+                lin <- c(vapply(mo$tt, function(t) t$type == "lin", logical(1)), rep(FALSE, length(mo$znames)))
+                ct <- data.frame(.fa_num(mo$coef), .fa_num(mo$se), ifelse(lin, "", .fa_fix(mo$t, 2)), ifelse(lin, "", .fa_pv(mo$p)),
+                                 stringsAsFactors=FALSE)
+                names(ct) <- c(gtxt("Coefficient"), gtxt("SE Coef."), gtxt("t"), gtxt("Sig."))
+                .fa_show(ct, gtxtf("Mixture Regression Coefficients (%s model): %s", model, r), "DOEMIXCOEF",
+                         outline=gtxt("Mixture Coefficients"), rowlabels=lab,
+                         caption=gtxt("Scheffe model without a constant. A linear coefficient is the predicted response of the pure component, so its t-test (against 0) is not shown; the Linear row of the ANOVA tests whether the components blend differently."))
+                sm <- data.frame(.fa_num(mo$s), .fa_pct(1 - mo$sse / mo$sst),
+                                 .fa_pct(if (mo$df_error > 0) 1 - (mo$sse / mo$df_error) / (mo$sst / (mo$n - 1)) else NA),
+                                 .fa_pct(if (is.finite(mo$press)) max(0, 1 - mo$press / mo$sst) else NA), stringsAsFactors=FALSE)
+                names(sm) <- c(gtxt("S"), gtxt("R-squared"), gtxt("Adj. R-squared"), gtxt("Pred. R-squared"))
+                .fa_show(sm, gtxtf("Model Summary: %s", r), "DOEMODELSUMMARY", outline=gtxt("Model Summary"), rowlabels=r)
+                an <- fa_mix_anova(mo)
+                ad <- data.frame(an$DF, .fa_num(an$SS), .fa_num(an$MS), .fa_fix(an$F, 2), .fa_pv(an$P), stringsAsFactors=FALSE)
+                names(ad) <- c(gtxt("df"), gtxt("Adj. SS"), gtxt("Adj. MS"), gtxt("F"), gtxt("Sig."))
+                .fa_show(ad, gtxtf("Analysis of Variance for Mixture: %s", r), "DOEMIXANOVA", outline=gtxt("ANOVA"), rowlabels=an$Source)
+            }
+            if (isTRUE(opts$maineffects) || isTRUE(opts$traceplot)) fa_plot_mix_trace(mo)
+            if (isTRUE(opts$contourplot) || isTRUE(opts$surfaceplot)) fa_plot_mix_ternary(mo)
+            if (isTRUE(opts$residualplots) && mo$df_error > 0) fa_plot_residuals(mo)
+        }, error=function(e) warns$warn(gtxtf("%s: mixture output error: %s", r, conditionMessage(e)), dostop=FALSE))
+        tryCatch(spsspkg.EndProcedure(), error=function(e) NULL)
+    }
+    if (isTRUE(opts$optimize) && length(mos)) {
+        StartProcedure(gtxt("Mixture Optimization"), "STATSDOEMIXOPT")
+        tryCatch(fa_mix_optimize(mos, opts, warns, conf), error=function(e)
+            warns$warn(gtxtf("Mixture optimizer error: %s", conditionMessage(e)), dostop=FALSE))
+        tryCatch(spsspkg.EndProcedure(), error=function(e) NULL)
+    }
+    invisible(mos)
+}
+
+# reference blend = centroid of the design region (pseudo space)
+.fa_mix_ref <- function(mo) { r <- colMeans(mo$P); r / sum(r) }
+
+fa_plot_mix_trace <- function(mo) {
+    q <- ncol(mo$P); ref <- .fa_mix_ref(mo)
+    cols <- c("#4C78A8", "#E45756", "#54A24B", "#B279A2", "#F58518", "#72B7B2", "#9D755D", "#BAB0AC", "#EECA3B", "#FF9DA6", "#9ECAE9", "#6F4E7C")
+    Pmin <- apply(mo$P, 2, min); Pmax <- apply(mo$P, 2, max)
+    curves <- lapply(seq_len(q), function(i) {
+        xi <- seq(Pmin[i], Pmax[i], length.out=60)
+        P <- t(vapply(xi, function(v) { p <- ref * (1 - v) / (1 - ref[i]); p[i] <- v; p }, numeric(q)))
+        ok <- apply(P, 1, function(p) all(p >= Pmin - 1e-9 & p <= Pmax + 1e-9))
+        list(x=(xi - ref[i])[ok], y=fa_mix_predict(mo, P[ok, , drop=FALSE]))
+    })
+    .fa_try_ip(.fa_ip_mix_trace(mo, curves))
+    .doe_submit_plot({
+        op <- par(mar=c(5, 5, 4, 10), family="sans"); on.exit(par(op))
+        yr <- range(unlist(lapply(curves, `[[`, "y")), na.rm=TRUE)
+        xr <- range(unlist(lapply(curves, `[[`, "x")), na.rm=TRUE)
+        plot(xr, yr, type="n", xlab=gtxt("Deviation from reference blend (component proportion, Cox direction)"),
+             ylab=gtxtf("Fitted %s", mo$resp), main=gtxtf("Response Trace: %s", mo$resp), cex.main=1)
+        grid(col=.fa_pal$grid); abline(v=0, lty=3, col="grey50")
+        for (i in seq_len(q)) lines(curves[[i]]$x, curves[[i]]$y, lwd=2.2, col=cols[(i - 1) %% 12 + 1])
+        par(xpd=TRUE)
+        legend(par("usr")[2] * 1.03, par("usr")[4], legend=mo$comps, col=cols[(seq_len(q) - 1) %% 12 + 1], lwd=2.2, bty="n", cex=0.85)
+    }, width=900, height=560)
+}
+
+fa_plot_mix_ternary <- function(mo) {
+    q <- ncol(mo$P); ref <- .fa_mix_ref(mo)
+    trip <- 1:3; if (q < 3) return(invisible(NULL))
+    rest <- setdiff(seq_len(q), trip); srest <- sum(ref[rest])
+    n <- 121
+    gx <- seq(0, 1, length.out=n); gy <- seq(0, sqrt(3) / 2, length.out=n)
+    G <- expand.grid(x=gx, y=gy)
+    b3 <- G$y / (sqrt(3) / 2); b2 <- G$x - b3 / 2; b1 <- 1 - b2 - b3
+    inside <- b1 >= -1e-9 & b2 >= -1e-9 & b3 >= -1e-9
+    P <- matrix(0, nrow(G), q)
+    P[, trip] <- cbind(b1, b2, b3) * (1 - srest)
+    if (length(rest)) P[, rest] <- matrix(ref[rest], nrow(G), length(rest), byrow=TRUE)
+    z <- rep(NA_real_, nrow(G)); z[inside] <- fa_mix_predict(mo, P[inside, , drop=FALSE])
+    Z <- matrix(z, n, n)
+    lab <- function(i) if (mo$pseudo) paste0(mo$comps[i], " (pseudo)") else mo$comps[i]
+    .fa_try_ip(.fa_ip_mix_ternary(mo, gx, gy, Z, vapply(trip, lab, character(1)),
+        mo$P[, trip, drop=FALSE] / pmax(1e-12, rowSums(mo$P[, trip, drop=FALSE]))))
+    .doe_submit_plot({
+        op <- par(mar=c(3, 2, 4, 2), family="sans"); on.exit(par(op))
+        image(gx, gy, Z, col=grDevices::hcl.colors(20, "Blues 3", rev=TRUE), asp=1, axes=FALSE, xlab="", ylab="",
+              main=gtxtf("Mixture Contours: %s%s", mo$resp, if (length(rest)) gtxt(" (other components at the reference blend)") else ""), cex.main=0.95)
+        contour(gx, gy, Z, add=TRUE, col="grey20", labcex=0.75)
+        polygon(c(0, 1, 0.5), c(0, 0, sqrt(3) / 2), border="black", lwd=1.5)
+        text(0, -0.04, lab(trip[1]), cex=0.9); text(1, -0.04, lab(trip[2]), cex=0.9); text(0.5, sqrt(3) / 2 + 0.04, lab(trip[3]), cex=0.9)
+        dp <- mo$P[, trip, drop=FALSE] / pmax(1e-12, rowSums(mo$P[, trip, drop=FALSE]))
+        points(dp[, 2] + dp[, 3] / 2, dp[, 3] * sqrt(3) / 2, pch=19, cex=0.8, col="#E45756")
+    }, width=760, height=700)
+}
+
+fa_mix_optimize <- function(mos, opts, warns, conf) {
+    mo1 <- mos[[1]]; q <- ncol(mo1$P); comps <- mo1$comps
+    pars <- fa_opt_params(mos, opts$goals, opts$lowers, opts$targets, opts$uppers, opts$weights, opts$importance, warns)
+    Pmin <- apply(mo1$P, 2, min); Pmax <- apply(mo1$P, 2, max)
+    zfix <- if (!is.null(mo1$Z)) matrix(0, 1, ncol(mo1$Z)) else NULL
+    Dof <- function(P) {
+        Zm <- if (is.null(zfix)) NULL else zfix[rep(1, nrow(P)), , drop=FALSE]
+        PR <- sapply(mos, function(m) fa_mix_predict(m, P, Zm)); PR <- matrix(PR, nrow=nrow(P))
+        apply(PR, 1, function(pr) { e <- .fa_composite(pr, pars); e$D + 1e-6 * e$tb })
+    }
+    set.seed(20260923)
+    E <- matrix(-log(runif(20000 * q)), ncol=q); S <- E / rowSums(E)
+    S <- rbind(S, mo1$P)
+    feas <- apply(S, 1, function(p) all(p >= Pmin - 1e-9 & p <= Pmax + 1e-9))
+    S <- S[feas, , drop=FALSE]
+    if (!nrow(S)) stop(gtxt("Mixture optimizer: no feasible blend inside the component ranges."), call.=FALSE)
+    Dv <- Dof(S); starts <- order(-Dv)[seq_len(min(6, length(Dv)))]
+    best <- NULL
+    for (s in starts) {
+        p0 <- S[s, ]
+        obj <- function(w) {
+            p <- exp(w - max(w)); p <- p / sum(p)
+            pen <- sum(pmax(0, Pmin - p)^2 + pmax(0, p - Pmax)^2) * 1e4
+            -(Dof(matrix(p, 1)) - pen)
+        }
+        o <- tryCatch(optim(log(pmax(p0, 1e-9)), obj, method="Nelder-Mead", control=list(maxit=800)), error=function(e) NULL)
+        cand <- if (!is.null(o)) { p <- exp(o$par - max(o$par)); p / sum(p) } else p0
+        if (!all(cand >= Pmin - 1e-6 & cand <= Pmax + 1e-6)) cand <- p0
+        v <- Dof(matrix(cand, 1))
+        if (is.null(best) || v > best$v) best <- list(p=cand, v=v)
+    }
+    pbest <- matrix(best$p, 1)
+    preds <- vapply(mos, function(m) fa_mix_predict(m, pbest, zfix), numeric(1))
+    comp <- .fa_composite(preds, pars)
+    real <- as.vector(mo1$from_p(pbest)) * mo1$total
+    gl <- c(maximize=gtxt("Maximize"), minimize=gtxt("Minimize"), target=gtxt("Target"))
+    pt <- data.frame(vapply(pars, function(p) gl[[p$goal]], character(1)),
+                     .fa_num(vapply(pars, function(p) p$L, numeric(1))), .fa_num(vapply(pars, function(p) p$T, numeric(1))),
+                     .fa_num(vapply(pars, function(p) p$U, numeric(1))), stringsAsFactors=FALSE)
+    names(pt) <- c(gtxt("Goal"), gtxt("Lower"), gtxt("Target"), gtxt("Upper"))
+    .fa_show(pt, gtxt("Optimization Criteria"), "DOEOPTCRIT", outline=gtxt("Optimization Criteria"),
+             rowlabels=vapply(pars, function(p) p$resp, character(1)))
+    sol <- data.frame(.fa_num(real, 5), .fa_num(real / mo1$total, 5), stringsAsFactors=FALSE)
+    names(sol) <- c(gtxt("Amount"), gtxt("Proportion"))
+    .fa_show(sol, gtxtf("Optimal Blend (composite D = %s)", .fa_fix(comp$D, 4)), "DOEMIXSOL",
+             outline=gtxt("Optimal Blend"), rowlabels=comps,
+             caption=gtxt("Search restricted to the range of each component in the data (process variables at their middle setting)."))
+    pr <- do.call(rbind, lapply(seq_along(mos), function(k) {
+        m <- mos[[k]]; ps <- fa_mix_predict(m, pbest, zfix, se=TRUE)
+        if (m$df_error > 0) { tq <- qt(1 - (1 - conf) / 2, m$df_error)
+            ci <- ps$fit + c(-1, 1) * tq * ps$se; pi <- ps$fit + c(-1, 1) * tq * sqrt(ps$se^2 + m$mse) } else ci <- pi <- c(NA, NA)
+        data.frame(.fa_num(ps$fit, 5), .fa_num(ps$se, 4), paste0("(", .fa_num(ci[1], 5), ", ", .fa_num(ci[2], 5), ")"),
+                   paste0("(", .fa_num(pi[1], 5), ", ", .fa_num(pi[2], 5), ")"), .fa_fix(comp$d[k], 4), stringsAsFactors=FALSE)
+    }))
+    names(pr) <- c(gtxt("Fit"), gtxt("SE Fit"), gtxtf("%s%% CI", format(100 * conf)), gtxtf("%s%% PI", format(100 * conf)), gtxt("Desirability d"))
+    .fa_show(pr, gtxt("Predicted Responses at the Optimal Blend"), "DOEOPTPRED", outline=gtxt("Predictions at Optimum"),
+             rowlabels=vapply(mos, function(m) m$resp, character(1)))
+    invisible(list(p=pbest, D=comp$D, preds=preds))
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# TAGUCHI (ROBUST PARAMETER) DESIGN ANALYSIS: signal-to-noise ratios,
+# response tables with delta and rank, main-effects plots, additive prediction
+# ════════════════════════════════════════════════════════════════════════════
+fa_run_taguchi <- function(data, factors, responses, warns, opts, alpha=0.05) {
+    Y <- as.matrix(data[, responses, drop=FALSE]); storage.mode(Y) <- "double"
+    nrep <- ncol(Y)
+    sn <- tolower(as.character(unlist(opts$sntype %||% ""))[1])
+    sn <- switch(sn, item_sn_a="larger", item_sn_b="smaller", item_sn_c="nominal", item_sn_d="nominal2", sn)
+    if (!nzchar(sn)) sn <- if (nrep >= 2) "nominal" else "larger"
+    if (!sn %in% c("larger","smaller","nominal","nominal2")) {
+        warns$warn(gtxtf("SNTYPE=%s is not recognized; LARGER used.", sn), dostop=FALSE); sn <- "larger" }
+    if (sn %in% c("nominal","nominal2") && nrep < 2)
+        stop(gtxt("Nominal-is-best S/N ratios need at least two response columns (replicates) per run."), call.=FALSE)
+    if (sn == "larger" && any(Y == 0, na.rm=TRUE))
+        stop(gtxt("Larger-is-better S/N ratio is undefined for a response of 0."), call.=FALSE)
+    ybar <- rowMeans(Y, na.rm=TRUE)
+    sdev <- if (nrep >= 2) apply(Y, 1, sd, na.rm=TRUE) else rep(NA_real_, nrow(Y))
+    SN <- switch(sn,
+        larger   = -10 * log10(rowMeans(1 / Y^2, na.rm=TRUE)),
+        smaller  = -10 * log10(rowMeans(Y^2, na.rm=TRUE)),
+        nominal  = 10 * log10(ybar^2 / sdev^2),
+        nominal2 = -10 * log10(sdev^2))
+    snlab <- switch(sn, larger=gtxt("Larger is better: -10 log10(mean(1/Y^2))"),
+                    smaller=gtxt("Smaller is better: -10 log10(mean(Y^2))"),
+                    nominal=gtxt("Nominal is best: 10 log10(mean^2 / s^2)"),
+                    nominal2=gtxt("Nominal is best: -10 log10(s^2)"))
+    ok <- is.finite(SN)
+    if (sum(!ok)) warns$warn(gtxtf("%d run(s) have an undefined S/N ratio (e.g. zero standard deviation) and were excluded.", sum(!ok)), dostop=FALSE)
+    lv <- lapply(factors, function(f) { x <- data[[f]]; if (is.numeric(x)) as.character(sort(unique(x[is.finite(x)]))) else unique(as.character(x[!is.na(x)])) })
+    names(lv) <- factors
+    xf <- lapply(factors, function(f) factor(as.character(data[[f]]), levels=lv[[f]])); names(xf) <- factors
+    resp_table <- function(v) {
+        M <- sapply(factors, function(f) { m <- tapply(v[ok], xf[[f]][ok], mean); m[lv[[f]]] })
+        maxl <- max(lengths(lv))
+        tab <- matrix("", maxl + 2, length(factors), dimnames=list(c(as.character(seq_len(maxl)), gtxt("Delta"), gtxt("Rank")), factors))
+        deltas <- numeric(length(factors))
+        for (j in seq_along(factors)) {
+            m <- if (is.list(M)) M[[j]] else M[, j]
+            tab[seq_along(m), j] <- .fa_num(m, 5)
+            deltas[j] <- diff(range(m, na.rm=TRUE))
+            tab[maxl + 1, j] <- .fa_num(deltas[j], 4)
+        }
+        tab[maxl + 2, ] <- as.character(rank(-deltas, ties.method="min"))
+        list(tab=as.data.frame(tab, stringsAsFactors=FALSE), means=if (is.list(M)) M else lapply(seq_along(factors), function(j) M[, j]), deltas=deltas)
+    }
+    names_note <- paste(vapply(factors, function(f) paste0(f, ": ", paste(seq_along(lv[[f]]), "=", lv[[f]], collapse=", ")), character(1)), collapse="; ")
+    StartProcedure(gtxt("Taguchi Analysis"), "STATSDOETAGUCHI")
+    tryCatch({
+        rs <- resp_table(SN); rm_ <- resp_table(ybar)
+        if (!isFALSE(opts$tables) && !isFALSE(opts$interpret)) tryCatch({
+            o <- order(-rs$deltas); bl <- vapply(seq_along(factors), function(j) lv[[j]][which.max(rs$means[[j]])], character(1))
+            dm <- order(-rm_$deltas)
+            li <- list(c(gtxt("Signal-to-noise"), gtxtf("%s has the largest effect on the S/N ratio (delta %s), then %s. Higher S/N = more robust (less sensitive to noise).",
+                                                        factors[o[1]], .fa_num(rs$deltas[o[1]], 4), .fa_listx(factors[o[-1]]))),
+                       c(gtxt("Best settings"), gtxtf("For the highest S/N: %s.", paste(paste0(factors, " = ", bl), collapse=", "))))
+            if (sn %in% c("nominal", "nominal2")) {
+                adj <- dm[!(dm %in% o[seq_len(max(1, floor(length(o) / 2)))])]
+                li[[3]] <- c(gtxt("Adjusting factor"), if (length(adj)) gtxtf("%s changes the mean more than the S/N ratio: use it to bring the mean to target.", factors[adj[1]])
+                                                       else gtxt("No factor affects the mean without also affecting S/N."))
+            }
+            .fa_show_interpret(li, gtxt("Summary of Results: Taguchi"))
+        }, error=function(e) NULL)
+        if (!isFALSE(opts$tables)) {
+            .fa_show(rs$tab, gtxt("Response Table for Signal-to-Noise Ratios"), "DOETAGSN", outline=gtxt("S/N Response Table"),
+                     rowlabels=rownames(rs$tab), caption=paste0(snlab, ". ", gtxt("Rank 1 = factor with the largest effect on S/N. Levels: "), names_note))
+            .fa_show(rm_$tab, gtxt("Response Table for Means"), "DOETAGMEAN", outline=gtxt("Means Response Table"),
+                     rowlabels=rownames(rm_$tab))
+            if (nrep >= 2) {
+                rsd <- resp_table(sdev)
+                .fa_show(rsd$tab, gtxt("Response Table for Standard Deviations"), "DOETAGSD", outline=gtxt("StDev Response Table"),
+                         rowlabels=rownames(rsd$tab))
+            }
+            # main-effects ANOVA of the S/N ratio (when there are error df)
+            dfr <- data.frame(SN=SN, xf, check.names=FALSE)[ok, , drop=FALSE]
+            fml <- stats::as.formula(paste("SN ~", paste(sprintf("`%s`", factors), collapse=" + ")))
+            fit <- tryCatch(stats::lm(fml, data=dfr, contrasts=setNames(rep(list("contr.sum"), length(factors)), factors)), error=function(e) NULL)
+            if (!is.null(fit) && fit$df.residual > 0) {
+                X <- stats::model.matrix(fit); asg <- attr(X, "assign"); y <- dfr$SN; sse <- sum(stats::resid(fit)^2)
+                mse <- sse / fit$df.residual
+                rows <- lapply(seq_along(factors), function(j) {
+                    cols <- which(asg == j); ss <- .fa_sse(X[, -cols, drop=FALSE], y) - sse; df <- length(cols)
+                    f <- (ss / df) / mse
+                    data.frame(df, .fa_num(ss), .fa_num(ss / df), .fa_fix(f, 2), .fa_pv(stats::pf(f, df, fit$df.residual, lower.tail=FALSE)), stringsAsFactors=FALSE)
+                })
+                an <- do.call(rbind, rows)
+                erow <- data.frame(fit$df.residual, .fa_num(sse), .fa_num(mse), "", "", stringsAsFactors=FALSE)
+                names(erow) <- names(an)
+                an <- rbind(an, erow)
+                names(an) <- c(gtxt("df"), gtxt("Adj. SS"), gtxt("Adj. MS"), gtxt("F"), gtxt("Sig."))
+                .fa_show(an, gtxt("Analysis of Variance for S/N Ratios"), "DOETAGANOVA", outline=gtxt("S/N ANOVA"),
+                         rowlabels=c(factors, gtxt("Error")),
+                         caption=gtxt("Main-effects model of the S/N ratio with each factor treated as categorical."))
+            }
+            # prediction at the best S/N level of each factor (additive model)
+            best <- vapply(seq_along(factors), function(j) which.max(rs$means[[j]]), integer(1))
+            gsn <- mean(SN[ok]); gm <- mean(ybar[ok])
+            psn <- gsn + sum(vapply(seq_along(factors), function(j) rs$means[[j]][best[j]] - gsn, numeric(1)))
+            pm  <- gm  + sum(vapply(seq_along(factors), function(j) rm_$means[[j]][best[j]] - gm, numeric(1)))
+            pr <- data.frame(t(c(vapply(seq_along(factors), function(j) lv[[j]][best[j]], character(1)), .fa_num(psn, 5), .fa_num(pm, 5))),
+                             stringsAsFactors=FALSE)
+            names(pr) <- c(factors, gtxt("Predicted S/N"), gtxt("Predicted mean"))
+            .fa_show(pr, gtxt("Predicted Result at the Best Settings"), "DOETAGPRED", outline=gtxt("Taguchi Prediction"),
+                     rowlabels=gtxt("Best S/N"),
+                     caption=gtxt("Each factor set to the level with the highest mean S/N; prediction assumes the factor effects add (no interactions). For nominal-is-best, use a factor with a large effect on the mean but little effect on S/N to adjust the mean to target, then confirm with a verification run."))
+        }
+        if (!isFALSE(opts$maineffects) || isTRUE(opts$createplots)) {
+            for (what in c("sn", "mean")) {
+                tab <- if (what == "sn") rs else rm_
+                .fa_try_ip(.fa_ip_taguchi(factors, lv, tab, what, mean(if (what == "sn") SN[ok] else ybar[ok]), snlab))
+                .doe_submit_plot({
+                    k <- length(factors); nc <- min(k, 4); nr <- ceiling(k / nc)
+                    op <- par(mfrow=c(nr, nc), mar=c(4, 4.2, 2.5, 0.8), oma=c(0, 0, 3, 0), family="sans"); on.exit(par(op))
+                    all <- unlist(tab$means); yr <- range(all, na.rm=TRUE); yr <- yr + c(-0.08, 0.08) * diff(yr)
+                    gmv <- mean(if (what == "sn") SN[ok] else ybar[ok])
+                    for (j in seq_len(k)) {
+                        m <- tab$means[[j]]
+                        plot(seq_along(m), m, type="b", pch=19, lwd=2, col=if (what == "sn") .fa_pal$sig else .fa_pal$line1,
+                             ylim=yr, xaxt="n", xlab=factors[j], ylab=if (j %% nc == 1 || nc == 1) (if (what == "sn") gtxt("Mean of S/N ratios") else gtxt("Mean of means")) else "",
+                             main=factors[j], cex.main=0.95, xlim=c(0.7, length(m) + 0.3))
+                        axis(1, at=seq_along(m), labels=lv[[j]]); grid(col=.fa_pal$grid); abline(h=gmv, lty=3, col="grey55")
+                    }
+                    mtext(if (what == "sn") gtxtf("Main Effects for S/N Ratios (%s)", snlab) else gtxt("Main Effects for Means"),
+                          outer=TRUE, line=1, font=2)
+                }, width=min(1400, 300 * min(length(factors), 4) + 120), height=300 * ceiling(length(factors) / 4) + 110)
+            }
+        }
+    }, error=function(e) warns$warn(gtxtf("Taguchi analysis error: %s", conditionMessage(e)), dostop=FALSE))
+    tryCatch(spsspkg.EndProcedure(), error=function(e) NULL)
+    invisible(list(SN=SN, mean=ybar))
+}
+
+# ════════════════════════════════════════════════════════════════════════════
 # SPSS COMMAND PARSER
 # ════════════════════════════════════════════════════════════════════════════
 
@@ -6204,7 +9804,8 @@ Run <- function(args) {
         spsspkg.Template("CONSTRAINTFUNC", subc="", ktype="literal", var="constraintfunc"),
         spsspkg.Template("MIXTURESUM",  subc="", ktype="float",   var="mixturesum"),
         spsspkg.Template("DESIGNTYPE",  subc="", ktype="str",     var="designtype",
-            vallist=list("optimal","factorial","plackettburman","rsm","boxbehnken","ccd","taguchi","lhs","dsd","fullfactorial")),
+            vallist=list("optimal","factorial","plackettburman","rsm","boxbehnken","ccd","taguchi","lhs","dsd","fullfactorial",
+                        "simplexlattice","simplexcentroid")),
         spsspkg.Template("MODEL",       subc="", ktype="str",     var="model"),
         spsspkg.Template("TRIALS",      subc="", ktype="int",     var="ntrials"),
         spsspkg.Template("CONSTANT",    subc="", ktype="bool",    var="constant"),
@@ -6279,7 +9880,53 @@ Run <- function(args) {
         spsspkg.Template("SELECTIONTRACE", subc="", ktype="bool", var="selectiontrace"),
         spsspkg.Template("FITPROFILE",     subc="", ktype="bool", var="fitprofile"),
         spsspkg.Template("PARSIMONYPLOT",  subc="", ktype="bool", var="parsimonyplot"),
-        spsspkg.Template("FACTORMAP",      subc="", ktype="bool", var="factormap")
+        spsspkg.Template("FACTORMAP",      subc="", ktype="bool", var="factormap"),
+        # ── Coded-factor analysis engine ──────────────────────────────────
+        spsspkg.Template("ANALYSISMODEL", subc="FITMODEL", ktype="str",     var="analysismodel",
+            vallist=list("coded","legacy","item_am_a","item_am_b")),
+        spsspkg.Template("TERMS",         subc="FITMODEL", ktype="literal", var="terms"),
+        spsspkg.Template("ALPHA",         subc="FITMODEL", ktype="float",   var="alpha"),
+        spsspkg.Template("BACKWARD",      subc="FITMODEL", ktype="bool",    var="backward"),
+        spsspkg.Template("ALPHAREMOVE",   subc="FITMODEL", ktype="float",   var="alpharemove"),
+        spsspkg.Template("CENTERTERM",    subc="FITMODEL", ktype="bool",    var="centerterm"),
+        spsspkg.Template("CONFLEVEL",     subc="FITMODEL", ktype="float",   var="conflevel"),
+        spsspkg.Template("LOWLEVELS",     subc="FITMODEL", ktype="literal", var="lowlevels"),
+        spsspkg.Template("EQUATION",      subc="FITMODEL", ktype="bool",    var="equation"),
+        spsspkg.Template("INTERPRET",     subc="FITMODEL", ktype="bool",    var="interpret"),
+        spsspkg.Template("PREDICT",       subc="FITMODEL", ktype="literal", var="predict", islist=TRUE),
+        spsspkg.Template("ALIASTABLE",    subc="FITMODEL", ktype="bool",    var="aliastable"),
+        spsspkg.Template("DIAGTABLE",     subc="FITMODEL", ktype="bool",    var="diagtable"),
+        spsspkg.Template("FACTORINFO",    subc="FITMODEL", ktype="bool",    var="factorinfo"),
+        spsspkg.Template("EFFECTSPLOT",   subc="FITMODEL", ktype="bool",    var="effectsplot"),
+        spsspkg.Template("LOWERS",        subc="OPTIMIZE", ktype="float",   var="optlowers", islist=TRUE),
+        spsspkg.Template("UPPERS",        subc="OPTIMIZE", ktype="float",   var="optuppers", islist=TRUE),
+        spsspkg.Template("WEIGHTS",       subc="OPTIMIZE", ktype="float",   var="optweights", islist=TRUE),
+        spsspkg.Template("IMPORTANCE",    subc="OPTIMIZE", ktype="float",   var="optimportance", islist=TRUE),
+        spsspkg.Template("HOLD",          subc="OPTIMIZE", ktype="literal", var="opthold"),
+        spsspkg.Template("SOLUTIONS",     subc="OPTIMIZE", ktype="int",     var="optsolutions", vallist=list(1, 50)),
+        spsspkg.Template("OVERLAY",       subc="OPTIMIZE", ktype="bool",    var="overlay"),
+        spsspkg.Template("ROBUST",        subc="OPTIMIZE", ktype="bool",    var="robust"),
+        spsspkg.Template("ROBUSTSD",      subc="OPTIMIZE", ktype="float",   var="robustsd"),
+        spsspkg.Template("CONFIRMRUNS",   subc="OPTIMIZE", ktype="int",     var="confirmruns", vallist=list(1, 1000)),
+        spsspkg.Template("SELECTION",     subc="FITMODEL", ktype="str",     var="selection",
+            vallist=list("none","backward","forward","stepwise","item_sel_a","item_sel_b","item_sel_c","item_sel_d")),
+        spsspkg.Template("ALPHAENTER",    subc="FITMODEL", ktype="float",   var="alphaenter"),
+        spsspkg.Template("BOXCOX",        subc="FITMODEL", ktype="str",     var="boxcox",
+            vallist=list("none","auto","log","sqrt","inverse","custom","item_bc_a","item_bc_b","item_bc_c","item_bc_d","item_bc_e","item_bc_f")),
+        spsspkg.Template("LAMBDA",        subc="FITMODEL", ktype="float",   var="lambda"),
+        spsspkg.Template("CATEGORICAL",   subc="FITMODEL", ktype="varname", var="categorical", islist=TRUE),
+        spsspkg.Template("GROUPING",      subc="FITMODEL", ktype="bool",    var="grouping"),
+        spsspkg.Template("SURFACEPLOT",   subc="FITMODEL", ktype="bool",    var="surfaceplot"),
+        spsspkg.Template("CANONICAL",     subc="FITMODEL", ktype="bool",    var="canonical"),
+        spsspkg.Template("MIXMODEL",      subc="FITMODEL", ktype="str",     var="mixmodel",
+            vallist=list("linear","quadratic","specialcubic","fullcubic","item_mm_a","item_mm_b","item_mm_c","item_mm_d")),
+        spsspkg.Template("MIXCOMPS",      subc="FITMODEL", ktype="str",     var="mixcomps",
+            vallist=list("auto","pseudo","proportions","item_mc_a","item_mc_b","item_mc_c")),
+        spsspkg.Template("TRACEPLOT",     subc="FITMODEL", ktype="bool",    var="traceplot"),
+        spsspkg.Template("SNTYPE",        subc="FITMODEL", ktype="str",     var="sntype",
+            vallist=list("larger","smaller","nominal","nominal2","none","item_sn_a","item_sn_b","item_sn_c","item_sn_d","item_sn_e")),
+        spsspkg.Template("LATTICEDEGREE", subc="",         ktype="int",     var="latticedegree", vallist=list(1, 10)),
+        spsspkg.Template("AUGMENTMIX",    subc="",         ktype="bool",    var="augmentmix")
     ))
     if ("HELP" %in% attr(args,"names")) helper(cmdname)
     else res <- spsspkg.processcmd(oobj, args, "optdesmc")

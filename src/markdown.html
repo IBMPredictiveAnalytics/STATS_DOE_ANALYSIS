@@ -318,6 +318,92 @@ already ran.</p>
 <hr/>
 
 <a id="poweroptsdlg"></a><a id="poweropts"></a><a id="poweropts.buttonResKey"></a>
+<h2>Model (coded-factor analysis)</h2>
+<p>When <b>Analyze</b> is selected, responses are analyzed with the coded-factor model by default
+(<code>/FITMODEL ANALYSISMODEL=CODED</code>). Numeric factors are coded &minus;1 (low) and +1 (high);
+a two-level text factor is coded &minus;1 for its first level (set it with <code>LOWLEVELS</code>).
+Center points are recognized from a <code>CenterPt</code>/<code>PtType</code> column (0 = center, 1 = cube,
+&minus;1 = axial) or, if there is none, from runs where every numeric factor is at its midpoint.
+<code>VARNAMES</code> must list the design factors, also when analyzing an existing dataset.</p>
+<p><b>Default model:</b> two-level designs &mdash; main effects, two-factor interactions and a center-point
+(curvature) term; response-surface designs (CCD, Box-Behnken or 3+ levels) &mdash; full quadratic;
+definitive screening &mdash; main effects and squares. Terms that are aliased with terms already in the model
+are removed, and the alias table shows what they are confounded with.</p>
+<p><b>TERMS</b> sets the model explicitly. Use factor names or letter codes (A, B, C &hellip; in
+<code>VARNAMES</code> order, I is skipped), joined with <code>*</code>, e.g.
+<code>TERMS="A B C D A*B CTPT"</code>. Keywords: LINEAR, 2WAY, 3WAY, SQUARES, QUADRATIC, FULL, CTPT.
+A different model for each response: <code>TERMS="Density: A B C D A*B CTPT; Odor: A B D A*B CTPT"</code>.</p>
+<p><b>BACKWARD=YES</b> removes the least significant term one at a time while its p-value is above
+<code>ALPHAREMOVE</code> (default 0.10), never removing a term that is part of a remaining interaction.
+<code>ALPHA</code> (default 0.05) sets the Pareto reference line; <code>CONFLEVEL</code> (default 95) sets
+interval widths.</p>
+<p>Output for each response: factor coding, coded coefficients (effect, coefficient, SE, t, significance, VIF),
+model summary (S, R-squared, adjusted and predicted R-squared, PRESS), ANOVA with adjusted sums of squares,
+curvature, and lack-of-fit/pure error when replicated runs exist, the equation in natural units (one column
+per text-factor level), the alias structure for fractional designs, and unusual observations. Charts
+(from the Analysis dialog): Pareto and normal plot of standardized effects (Lenth&rsquo;s method when there are
+no error degrees of freedom), main-effects and interaction plots of fitted means with the fitted center point,
+cube plot, contour plots and residual plots. <code>ANALYSISMODEL=LEGACY</code> restores the previous
+raw-unit behavior.</p>
+<h2>Factors for analysis-only runs</h2>
+<p>With <code>GENERATEDESIGN=NO</code>, <code>VARNAMES</code> may be left out. The extension then uses, in order:
+(1) the design information saved in the dataset &mdash; every design it generates stores its factor list as the data
+file attribute <code>DOE_Factors</code> (kept when the dataset is saved as .sav; view it with <code>DISPLAY ATTRIBUTES</code>);
+(2) otherwise, columns detected as factors: 2 to 7 distinct settings (and at most half as many as there are runs),
+excluding run-order, block, center-point and response columns. A <i>Factors Used</i> table shows which columns were
+used and why. When you do name the factors in an analysis, that list is saved in the active dataset&rsquo;s attributes
+so the next analysis can omit <code>VARNAMES</code> (save the dataset to keep it).</p>
+<h2>More analysis options (Model&hellip; and Mixture/Taguchi&hellip; buttons)</h2>
+<ul>
+<li><b>Term selection</b> (<code>SELECTION=NONE|BACKWARD|FORWARD|STEPWISE</code>, <code>ALPHAENTER</code>,
+<code>ALPHAREMOVE</code>): chooses terms by p-value and keeps the model hierarchical. <code>BACKWARD=YES</code> still works.</li>
+<li><b>Box-Cox</b> (<code>BOXCOX=NONE|AUTO|LOG|SQRT|INVERSE|CUSTOM</code>, <code>LAMBDA</code>): models Y<sup>&lambda;</sup>;
+AUTO uses the best &lambda; rounded to 0.5 and shows its confidence interval. The optimizer converts back to original units.</li>
+<li><b>General full factorial</b>: with <code>DESIGNTYPE=FULLFACTORIAL</code>, or factors listed in
+<code>CATEGORICAL=</code>, numeric factors with more than two levels are treated as categories.
+<code>GROUPING=YES</code> adds Tukey pairwise comparisons with letter groupings.</li>
+<li><b>Response surface</b>: <code>CANONICAL=YES</code> reports the stationary point and whether it is a maximum,
+minimum or saddle; <code>SURFACEPLOT=YES</code> draws 3-D surfaces.</li>
+<li><b>Mixtures</b>: components are those flagged <code>MIXTURES=YES</code>, all factors of a simplex design, or
+factors that add to the same total in every run. <code>MIXMODEL=LINEAR|QUADRATIC|SPECIALCUBIC|FULLCUBIC</code>,
+<code>MIXCOMPS=AUTO|PSEUDO|PROPORTIONS</code>, <code>TRACEPLOT=YES</code>; contour plots are ternary;
+the optimizer searches blends within the component ranges. New designs:
+<code>DESIGNTYPE=SIMPLEXLATTICE</code> (with <code>LATTICEDEGREE</code>) and <code>SIMPLEXCENTROID</code>,
+optionally <code>AUGMENTMIX=YES</code> (axial blends + centroid).</li>
+<li><b>Taguchi</b>: <code>DESIGNTYPE=TAGUCHI</code> or <code>SNTYPE=LARGER|SMALLER|NOMINAL|NOMINAL2</code>, with
+the replicate response columns in <code>RESPONSEVAR</code>: S/N, means and standard-deviation response tables
+(delta and rank), S/N ANOVA, main-effects plots and the predicted result at the best levels.</li>
+<li><b>Plain-language summary</b> (<code>INTERPRET=YES</code>, default): a <i>Summary of Results</i> table above each
+response's tables that states in words whether the model is significant, how much variation it explains and how well it
+should predict, which terms matter (strongest first), the size and direction of the largest effects, curvature,
+lack of fit, residual problems and cautions. Mixture, Taguchi and optimizer output get their own summaries.
+<code>INTERPRET=NO</code> turns it off.</li>
+<li><b>Residual checks</b> (shown with <code>DIAGTABLE=YES</code>): Anderson&ndash;Darling normality test of the residuals,
+Durbin&ndash;Watson statistic in run order (a drift or time trend shows as a value well below 2) and the largest
+Cook&rsquo;s distance (above 1 = one run strongly changes the fit).</li>
+<li><b>Prediction</b> (<code>PREDICT="Factor=value ...; Factor=value ..."</code>): fitted value, its standard error,
+the confidence interval for the mean and the prediction interval for a single new run at each setting (separate
+settings with a semicolon; factor names or letter codes; factors left out are at their center or first level).
+Settings outside the tested range are flagged as extrapolation. Intervals use <code>CONFLEVEL</code>.</li>
+<li><b>Optimizer extras</b> (<code>/OPTIMIZE</code>): <code>OVERLAY=YES</code> overlaid contour plot of the region
+meeting every limit; <code>CONFIRMRUNS=n</code> interval for the average of n confirmation runs;
+<code>ROBUST=YES ROBUSTSD=5</code> simulates setting errors and run-to-run variation around the optimum.</li>
+</ul>
+<h2>Optimizer</h2>
+<p>With <b>Optimize Response</b>, one goal per response (<code>OPTIMIZATIONGOALS</code>: MAXIMIZE, MINIMIZE or
+TARGET) and optional targets (<code>OPTIMIZATIONTARGETS</code>) are combined by the Derringer&ndash;Suich
+desirability method. On <code>/OPTIMIZE</code>: <code>LOWERS</code> and <code>UPPERS</code> give the acceptable
+limits (one value per response; a value is ignored where the goal does not use it),
+<code>WEIGHTS</code> and <code>IMPORTANCE</code> (0.1&ndash;10, default 1),
+<code>HOLD="Factor=value ..."</code> fixes factors, and <code>SOLUTIONS</code> lists the best distinct settings.
+Blank limits default to the observed range of the response. If any model contains the center-point term, only the
+cube corners and the center point are searched, because that model is not defined elsewhere.</p>
+<pre>STATS DOE ANALYSIS GENERATEDESIGN=NO VARNAMES=Bentonite BentRatio H2ORatio CoaterHz
+  RESPONSEVAR=Density Odor ANALYZE=YES OPTIMIZERESPONSE=YES OPTIMIZATIONGOALS=TARGET MINIMIZE
+  OPTIMIZATIONTARGETS=26.5 23.3
+ /FITMODEL TERMS="Density: A B C D A*B CTPT; Odor: A B D A*B CTPT" ALPHA=0.10
+ /OPTIMIZE LOWERS=20 0 UPPERS=30 32.7 HOLD="Bentonite=AC"
+ /OUTPUT PARETOPLOT=YES MAINEFFECTS=YES INTERACTIONS=YES.</pre>
 <h2>Power</h2>
 
 <p>A standalone power and sample size planner, independent of Generate Design &mdash;

@@ -11,7 +11,7 @@
 <!-- Corp.                                                             -->
 <!--                                                                   -->
 <!-- ***************************************************************** -->
-<!-- Enhanced DoE Command XML with Minitab-like Features -->
+<!-- STATS DOE ANALYSIS command syntax -->
 <Command xmlns="http://xml.spss.com/spss/extension" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="extension-1.0.xsd" Name="STATS DOE ANALYSIS" Language="R">
 	<Subcommand Name="">
 		<Parameter Name="GENERATEDESIGN" ParameterType="Keyword">
@@ -44,7 +44,11 @@
 			<EnumValue>lhs</EnumValue>
 			<EnumValue>dsd</EnumValue>
 			<EnumValue>fullfactorial</EnumValue>
+			<EnumValue>simplexlattice</EnumValue>
+			<EnumValue>simplexcentroid</EnumValue>
 		</Parameter>
+		<Parameter Name="LATTICEDEGREE" ParameterType="Integer"/>
+		<Parameter Name="AUGMENTMIX" ParameterType="Keyword"/>
 		<!-- MODEL applies only when DESIGNTYPE=OPTIMAL: it selects the curvature
 		     model (LINEAR/QUAD/CUBIC/CUBICS, or a custom FORMULA=) used to build
 		     the optimal-design candidate search. For every other DESIGNTYPE
@@ -56,7 +60,7 @@
 		<Parameter Name="CONSTANT" ParameterType="Keyword"/>
 		<Parameter Name="CONSTRAINTFUNC" ParameterType="InputFile"/>
 		<Parameter Name="MIXTURESUM" ParameterType="Number"/>
-		<!-- NEW: Enhanced parameters for Minitab-like features -->
+		<!-- Run-order, blocking and replication options -->
 		<Parameter Name="RANDOMIZE" ParameterType="Keyword"/>
 		<Parameter Name="BLOCKS" ParameterType="Integer"/>
 		<Parameter Name="REPLICATES" ParameterType="Integer"/>
@@ -148,6 +152,53 @@
 		<Parameter Name="POWERRUNS" ParameterType="IntegerList"/>
 		<Parameter Name="POWERALPHA" ParameterType="Number"/>
 		<Parameter Name="POWERTARGET" ParameterType="Number"/>
+	</Subcommand>
+	<!-- Coded-factor model for analysis (two-level factorial, screening and
+	     response-surface designs). See the help file for the TERMS syntax. -->
+	<Subcommand Name="FITMODEL" Occurrence="Optional">
+		<Parameter Name="ANALYSISMODEL" ParameterType="Keyword">
+			<EnumValue>coded</EnumValue>
+			<EnumValue>legacy</EnumValue>
+		</Parameter>
+		<Parameter Name="TERMS" ParameterType="QuotedString"/>
+		<Parameter Name="ALPHA" ParameterType="Number"/>
+		<Parameter Name="BACKWARD" ParameterType="Keyword"/>
+		<Parameter Name="ALPHAREMOVE" ParameterType="Number"/>
+		<Parameter Name="CENTERTERM" ParameterType="Keyword"/>
+		<Parameter Name="CONFLEVEL" ParameterType="Number"/>
+		<Parameter Name="LOWLEVELS" ParameterType="QuotedString"/>
+		<Parameter Name="EQUATION" ParameterType="Keyword"/>
+		<Parameter Name="INTERPRET" ParameterType="Keyword"/>
+		<Parameter Name="PREDICT" ParameterType="QuotedString"/>
+		<Parameter Name="ALIASTABLE" ParameterType="Keyword"/>
+		<Parameter Name="DIAGTABLE" ParameterType="Keyword"/>
+		<Parameter Name="FACTORINFO" ParameterType="Keyword"/>
+		<Parameter Name="EFFECTSPLOT" ParameterType="Keyword"/>
+		<Parameter Name="SELECTION" ParameterType="Keyword"/>
+		<Parameter Name="ALPHAENTER" ParameterType="Number"/>
+		<Parameter Name="BOXCOX" ParameterType="Keyword"/>
+		<Parameter Name="LAMBDA" ParameterType="Number"/>
+		<Parameter Name="CATEGORICAL" ParameterType="VariableNameList"/>
+		<Parameter Name="GROUPING" ParameterType="Keyword"/>
+		<Parameter Name="CANONICAL" ParameterType="Keyword"/>
+		<Parameter Name="SURFACEPLOT" ParameterType="Keyword"/>
+		<Parameter Name="MIXMODEL" ParameterType="Keyword"/>
+		<Parameter Name="MIXCOMPS" ParameterType="Keyword"/>
+		<Parameter Name="TRACEPLOT" ParameterType="Keyword"/>
+		<Parameter Name="SNTYPE" ParameterType="Keyword"/>
+	</Subcommand>
+	<!-- Response optimization settings (one value per RESPONSEVAR, in order) -->
+	<Subcommand Name="OPTIMIZE" Occurrence="Optional">
+		<Parameter Name="LOWERS" ParameterType="NumberList"/>
+		<Parameter Name="UPPERS" ParameterType="NumberList"/>
+		<Parameter Name="WEIGHTS" ParameterType="NumberList"/>
+		<Parameter Name="IMPORTANCE" ParameterType="NumberList"/>
+		<Parameter Name="HOLD" ParameterType="QuotedString"/>
+		<Parameter Name="SOLUTIONS" ParameterType="Integer"/>
+		<Parameter Name="OVERLAY" ParameterType="Keyword"/>
+		<Parameter Name="ROBUST" ParameterType="Keyword"/>
+		<Parameter Name="ROBUSTSD" ParameterType="Number"/>
+		<Parameter Name="CONFIRMRUNS" ParameterType="Integer"/>
 	</Subcommand>
 	<Subcommand Name="SAVE" Occurrence="Optional">
 		<Parameter Name="DATASET" ParameterType="DatasetName"/>
