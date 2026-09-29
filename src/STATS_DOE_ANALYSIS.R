@@ -7828,11 +7828,27 @@ fa_std_effects <- function(fo) {
 }
 
 # ── Writes the interactive chart report ──────────────────────────────────────
+.fa_js_ascii <- function(js) {
+    cp <- utf8ToInt(js)
+    if (anyNA(cp)) return(NULL)
+    bad <- cp > 126L | (cp < 32L & !(cp %in% c(9L, 10L, 13L)))
+    if (!any(bad)) return(js)
+    ch <- intToUtf8(cp, multiple=TRUE)
+    b <- cp[bad]
+    hi <- b > 65535L
+    esc <- sprintf("\\u%04x", b)
+    if (any(hi)) { v <- b[hi] - 65536L
+        esc[hi] <- sprintf("\\u%04x\\u%04x", 55296L + v %/% 1024L, 56320L + v %% 1024L) }
+    ch[bad] <- esc
+    paste(ch, collapse="")
+}
+
 .fa_plotly_js <- function() {
     d <- tryCatch(system.file("htmlwidgets", "lib", "plotlyjs", package="plotly"), error=function(e) "")
     f <- if (nzchar(d)) list.files(d, pattern="^plotly.*min\\.js$", full.names=TRUE) else character(0)
     if (length(f)) {
-        js <- tryCatch(paste(readLines(f[1], warn=FALSE, encoding="UTF-8"), collapse="\n"), error=function(e) NULL)
+        js <- tryCatch({ r <- readBin(f[1], "raw", file.info(f[1])$size); r <- r[r != as.raw(0)]
+                         x <- rawToChar(r); Encoding(x) <- "UTF-8"; .fa_js_ascii(x) }, error=function(e) NULL)
         if (!is.null(js)) return(paste0("<script>", gsub("</script", "<\\/script", js, fixed=TRUE), "</script>"))
     }
     "<script src=\"https://cdn.plot.ly/plotly-2.27.0.min.js\"></script>"
