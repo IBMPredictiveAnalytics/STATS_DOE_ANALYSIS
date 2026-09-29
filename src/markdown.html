@@ -253,9 +253,12 @@ with Optimal Design.</p>
 <ul>
 <li><strong>Randomize run order</strong> (RANDOMIZE) &mdash; randomize the run order
 of the generated design</li>
-<li><strong>Blocks</strong> (BLOCKS) &mdash; number of blocks to divide the design into</li>
+<li><strong>Blocks</strong> (BLOCKS) &mdash; number of blocks to divide the design into.
+Factorial designs are blocked directly; for all other design types each block is made of
+whole replicates, so REPLICATES must be a multiple of BLOCKS (otherwise BLOCKS is ignored with a warning).
+With RANDOMIZE, runs are randomized within each block.</li>
 <li><strong>Replicates</strong> (REPLICATES) &mdash; number of times to replicate the
-entire design (applies to Optimal, LHS, Taguchi, Box-Behnken, CCD, and RSM designs)</li>
+entire design (all design types). The Reps column numbers the replicates 1 to N.</li>
 </ul>
 
 <hr/>

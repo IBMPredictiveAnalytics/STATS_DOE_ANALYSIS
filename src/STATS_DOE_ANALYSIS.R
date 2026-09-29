@@ -647,6 +647,16 @@ optdesmc <- function(varnames=NULL, frml=NULL, factors="no",
         factorlist <- NULL
         frml_built <- NULL
         designtype <- tolower(designtype)
+        # Analysis of an existing dataset: DESIGNTYPE defaults to "optimal", so
+        # use the design type saved in the dataset by this extension (data file
+        # attribute DOE_DesignType, written when the design was generated but
+        # previously never read back). Decides the default model, e.g. main
+        # effects only for Plackett-Burman.
+        if (identical(designtype, "optimal")) {
+            sdt <- tryCatch(unlist(spssdictionary.GetDataFileAttributes("DOE_DesignType")), error=function(e) NULL)
+            sdt <- if (length(sdt)) tolower(trimws(as.character(sdt[1]))) else ""
+            if (!is.na(sdt) && nzchar(sdt)) designtype <- sdt
+        }
     }
 
     # ════════════════════════════════════════════════════════════════════════
@@ -760,6 +770,20 @@ optdesmc <- function(varnames=NULL, frml=NULL, factors="no",
         # of Experiments", Ch. 6 & 8). Off by default (screeningcenterpts=FALSE)
         # so existing designs are completely unaffected; DSD is excluded here
         # because its standard construction already includes one center run.
+        # ── Replicates ──────────────────────────────────────────────────────────
+        # REPLICATES = number of copies of the whole design (as documented).
+        # "factorial" replicates internally (FrF2 / base generator); every other
+        # type is stacked here, BEFORE center points, StdOrder, blocking and
+        # randomization. Previously the copies were appended AFTER randomization,
+        # all with Reps=1 and duplicated StdOrder, and for Box-Behnken/CCD/RSM
+        # REPLICATES only changed the number of center points.
+        if (!is.null(replicates) && replicates > 1 && designtype != "factorial") {
+            n0 <- nrow(res$design)
+            res$design <- do.call(rbind, replicate(replicates, res$design, simplify=FALSE))
+            res$design$Reps <- rep(seq_len(replicates), each=n0)
+            rownames(res$design) <- NULL
+        }
+
         if (isTRUE(screeningcenterpts) && !(designtype %in% c("factorial","plackettburman"))) {
             # Same no-op warning pattern used for GENERATEDESIGN=No (informs
             # the user a keyword had no effect instead of silently ignoring
@@ -797,82 +821,52 @@ optdesmc <- function(varnames=NULL, frml=NULL, factors="no",
             # by default), appended last on both frames so column order matches
             # for rbind, and is excluded from every meta_cols list above so it is
             # never mistaken for a real experimental factor downstream.
+            if ("Block" %in% names(res$design)) {   # was NA -> center points lost in a blocked analysis
+                ub <- sort(unique(res$design$Block[!is.na(res$design$Block)]))
+                if (length(ub)) ctr_df$Block <- rep(ub, length.out=nrow(ctr_df))
+            }
             res$design$CenterPt <- 1
             ctr_df$CenterPt     <- 0
             res$design <- rbind(res$design, ctr_df)
         }
 
         # ── Randomize run order ──────────────────────────────────────────────────
+        # Standard order first, then blocks, then randomization WITHIN blocks.
+        rownames(res$design) <- NULL
+        res$design$StdOrder  <- seq_len(nrow(res$design))
+
+        # Blocks for designs without native blocking (FrF2 factorials supply their
+        # own "Block" column). The old rule assigned blocks 1,2,1,2,... down the
+        # standard order, which confounds the block effect with a main effect
+        # (e.g. factor A when BLOCKS=2). Blocks are now formed from whole
+        # replicates (valid, Minitab-style); otherwise no blocks are created and
+        # a warning explains why, instead of silently biasing effect estimates.
+        if (!is.null(blocks) && blocks > 1 && !("Block" %in% names(res$design))) {
+            nrep_all <- if ("Reps" %in% names(res$design)) max(res$design$Reps, na.rm=TRUE) else 1
+            if (nrep_all >= blocks && nrep_all %% blocks == 0) {
+                res$design$Block <- as.integer(ceiling(res$design$Reps / (nrep_all / blocks)))
+            } else {
+                warns$warn(gtxtf(
+                    "BLOCKS=%d was ignored for DESIGNTYPE=%s: for this design type blocks are formed from whole replicates. Set REPLICATES to a multiple of BLOCKS (e.g. REPLICATES=%d), or use a Factorial design, which supports blocking directly.",
+                    as.integer(blocks), toupper(designtype), as.integer(blocks)), dostop=FALSE)
+            }
+        }
+
         if (randomize) {
             set.seed(NULL)
-            run_order            <- sample(nrow(res$design))
-            res$design           <- res$design[run_order, , drop=FALSE]
-            res$design$StdOrder  <- as.integer(rownames(res$design))
-            res$design$RunOrder  <- seq_len(nrow(res$design))
+            grp <- if ("Block" %in% names(res$design)) res$design$Block else rep(1L, nrow(res$design))
+            grp[is.na(grp)] <- max(c(0L, grp), na.rm=TRUE) + 1L
+            ord <- unlist(lapply(sort(unique(grp)), function(b) {
+                idx <- which(grp == b); idx[sample.int(length(idx))] }), use.names=FALSE)
+            res$design <- res$design[ord, , drop=FALSE]
             rownames(res$design) <- NULL
-        } else {
-            res$design$StdOrder <- seq_len(nrow(res$design))
-            res$design$RunOrder <- seq_len(nrow(res$design))
         }
-        
-        # ── Reorder columns: StdOrder, RunOrder first, then variables ───────────
+        res$design$RunOrder <- seq_len(nrow(res$design))
+
         meta_cols <- c("StdOrder", "RunOrder")
         other_cols <- setdiff(names(res$design), meta_cols)
         res$design <- res$design[, c(meta_cols, other_cols), drop=FALSE]
 
-        # ── Blocks ───────────────────────────────────────────────────────────────
-        # Skip this generic (statistically arbitrary, run-order-based) block
-        # assignment if generate_factorial_FrF2() already set a proper,
-        # confounding-aware "Block" column from FrF2's own native blocking --
-        # this only fires as the fallback for design types that don't have
-        # (or couldn't use) native blocking.
-        if (!is.null(blocks) && blocks > 1 && !("Block" %in% names(res$design))) {
-            nruns                <- nrow(res$design)
-            res$design$Block     <- rep(seq_len(blocks), length.out=nruns)[res$design$RunOrder]
-        }
-
-        # ── Replicates for non-FrF2 designs ─────────────────────────────────────
-        # BUGFIX 1: "plackettburman", "dsd", and "fullfactorial" were missing
-        # from this whitelist -- each of those three generator functions
-        # (generate_pb_FrF2/generate_pb_base, generate_dsd, generate_full_
-        # factorial) hard-codes Reps=1 and has no internal replicate handling
-        # of its own, so REPLICATES=N was silently a no-op for them: the
-        # keyword parsed fine and no warning fired, but the generated design
-        # just never grew past N=1. Added below.
-        #
-        # BUGFIX 2 (regression from the fix above -- caught during the same
-        # audit before it shipped): "boxbehnken", "ccd", and "rsm" (rsm reuses
-        # generate_ccd) must NOT be in this whitelist, even though they always
-        # have been. generate_box_behnken() and generate_ccd() already consume
-        # `replicates` themselves, internally, as the CENTER POINT COUNT (see
-        # their own "ncp <- if (!is.null(replicates)) replicates else 3" lines
-        # and their own in-code comments -- "Standard Box-Behnken: 3 center
-        # points (not replicates*3)" / "Center points: standard is ncp, not
-        # ncp*3" -- both comments explicitly document that this value must NOT
-        # also be used as a whole-design multiplier). Because this generic
-        # block ran a second time for these three design types anyway, setting
-        # REPLICATES=N previously added N center points AND THEN duplicated
-        # the entire design (cube/star points included) N times over -- e.g.
-        # REPLICATES=3 on a Box-Behnken design silently produced 9 center
-        # points and tripled every cube point too, contradicting the
-        # generator's own documented intent. This is the same class of gap as
-        # "factorial", which was (correctly) already excluded here because it
-        # too has its own internal, single-meaning replicate handling.
-        #
-        # Net effect: REPLICATES now means exactly one thing per design type --
-        # "repeat the whole design N times" for optimal/lhs/taguchi/
-        # plackettburman/dsd/fullfactorial (none of which have any internal
-        # notion of replication), and "use N center points" for boxbehnken/
-        # ccd/rsm/factorial (each of which already handles replication/center
-        # points correctly on its own).
-        if (!is.null(replicates) && replicates > 1 &&
-            designtype %in% c("optimal","lhs","taguchi",
-                               "plackettburman","dsd","fullfactorial",
-                               "simplexlattice","simplexcentroid")) {
-            res$design           <- do.call(rbind, replicate(replicates, res$design, simplify=FALSE))
-            res$design$RunOrder  <- seq_len(nrow(res$design))
-            rownames(res$design) <- NULL
-        }
     }  # End of else block for design generation
 
     # ── Display design summary (skip if reading from existing dataset) ───────
@@ -1298,7 +1292,16 @@ generate_factorial_FrF2 <- function(spec, variables, factors, ntrials, blocks, r
         reps_col <- df$Reps
         df <- df[, setdiff(names(df), "Reps"), drop=FALSE]
     } else {
-        reps_col <- rep(1, nrow(df))
+        # FrF2 never returns a "Reps" column: the replicate number is only in
+        # run.order(design)$run.no.std.rp ("std.rep" or "std.block.rep"; the last
+        # component is the replicate). Previously every row got Reps=1.
+        reps_col <- rep(1L, nrow(df))
+        if (nreps > 1) {
+            rp <- tryCatch(as.character(FrF2::run.order(design)$run.no.std.rp), error=function(e) NULL)
+            rn <- if (length(rp) == nrow(df)) suppressWarnings(as.integer(sub("^.*[.]", "", rp))) else NULL
+            reps_col <- if (!is.null(rn) && !anyNA(rn) && setequal(unique(rn), seq_len(nreps))) rn
+                        else rep(seq_len(nreps), each=nrow(df) %/% nreps)
+        }
     }
 
     has_blocks_col <- "Blocks" %in% names(df)
@@ -1838,7 +1841,7 @@ generate_box_behnken <- function(spec, variables, replicates, warns) {
     }
     # Standard Box-Behnken: 3 center points (not replicates*3)
     # If replicates specified, use it; otherwise default to 3
-    ncp   <- if (!is.null(replicates)) replicates else 3
+    ncp   <- 3   # REPLICATES now replicates the whole design (see optdesmc), as documented in the help
     pairs <- combn(nvars, 2)
     rows  <- list()
     for (p in seq_len(ncol(pairs))) {
@@ -1874,7 +1877,7 @@ generate_ccd <- function(spec, variables, replicates, warns) {
     # Montgomery, "Design and Analysis of Experiments", Ch. 11.
     alpha <- (2^nvars)^0.25
     # Center points: standard is ncp, not ncp*3
-    ncp   <- if (!is.null(replicates)) replicates else 3
+    ncp   <- 3   # REPLICATES now replicates the whole design (see optdesmc), as documented in the help
     
     # Factorial points (coded as ±1)
     fact  <- as.matrix(expand.grid(rep(list(c(-1,1)), nvars)))
@@ -1919,6 +1922,7 @@ generate_ccd <- function(spec, variables, replicates, warns) {
         df[[i]] <- mid + mat[,i] * range_half
         names(df)[i] <- as.character(spec$var[i])
     }
+    rownames(df) <- NULL   # rbind() left duplicate row names ("r1","r2") that corrupted StdOrder under RANDOMIZE
     df <- cbind(Reps=1, df)
     list(design=df, D=NA, A=NA, Ge=NA, Dea=NA)
 }
@@ -2043,8 +2047,17 @@ augment_to_ccd <- function(varnames, responsevar, outputdataset, augmentcenterpt
 
     combined <- if (nrow(center_df) > 0) rbind(existing_data, axial_df, center_df) else rbind(existing_data, axial_df)
 
-    if ("StdOrder" %in% names(combined)) combined$StdOrder <- seq_len(nrow(combined))
-    if ("RunOrder" %in% names(combined)) combined$RunOrder <- seq_len(nrow(combined))
+    # Keep the original runs' StdOrder/RunOrder (previously all rows were
+    # renumbered 1..n in data order, losing the original standard order) and
+    # number the added runs after them; added runs are replicate 1.
+    n_old <- nrow(existing_data); n_new <- nrow(combined) - n_old
+    for (oc in c("StdOrder","RunOrder")) if (oc %in% names(combined)) {
+        old_v <- suppressWarnings(as.integer(existing_data[[oc]]))
+        if (anyNA(old_v) || anyDuplicated(old_v)) old_v <- seq_len(n_old)
+        combined[[oc]] <- c(old_v, max(old_v, 0L) + seq_len(n_new))
+    }
+    if ("Reps" %in% names(combined) && n_new > 0) combined$Reps[n_old + seq_len(n_new)] <- 1L
+    rownames(combined) <- NULL
 
     tryCatch(spsspkg.EndProcedure(), error=function(e) NULL)
     gendataset(list(design=combined), outputdataset, variables, NULL, warns, designtype="ccd")
@@ -6620,6 +6633,10 @@ fa_build_coding <- function(data, factors, warns, lows=NULL, highs=NULL,
     dm <- tolower(if (is.null(designmodel)) "" else as.character(unlist(designmodel))[1])
     kind <- if (dt == "dsd") "dsd"
             else if (dt %in% c("ccd","rsm","boxbehnken")) "rsm"
+            # Plackett-Burman: main effects only (two-factor interactions are
+            # partially aliased with main effects; adding them saturated the
+            # model, leaving no error degrees of freedom)
+            else if (dt == "plackettburman") "linear"
             else if (dt %in% c("optimal","lhs") && dm %in% c("linear","item_313_a")) "linear"
             else if (two_level) "factorial"
             else if (multi_cat && !any(vapply(info, function(z) z$type == "numeric" && z$nlev >= 3, logical(1)))) "general"
@@ -8538,7 +8555,7 @@ fa_opt_params <- function(fos, goals, lowers, targets, uppers, weights, importan
         } else {
             if (!is.finite(lo)) lo <- min(y); if (!is.finite(up)) up <- max(y)
             if (!is.finite(tg)) tg <- (lo + up) / 2
-            if (!(lo < tg && tg < up)) stop(gtxtf("Optimizer: %s (target) needs lower < target < upper.", nm), call.=FALSE)
+            if (!(lo < tg && tg < up)) stop(gtxtf("Optimizer: %s (target) needs lower < target < upper, but lower = %s, target = %s, upper = %s (unspecified bounds default to the observed minimum and maximum). Give the bounds with OPTLOWERS/OPTUPPERS or choose a target inside the observed range.", nm, format(signif(lo, 6)), format(signif(tg, 6)), format(signif(up, 6))), call.=FALSE)
         }
         w <- W[k]; if (!is.finite(w) || w < 0.1 || w > 10) {
             warns$warn(gtxtf("Optimizer: weight for %s must be between 0.1 and 10; 1 used.", nm), dostop=FALSE); w <- 1 }
