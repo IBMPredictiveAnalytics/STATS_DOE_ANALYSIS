@@ -5,14 +5,16 @@ Command-Specs: STATS_DOE_ANALYSIS.xml
 Code-Files: STATS_DOE_ANALYSIS.R
 Misc-Files: extsyntax.css,IBMdialogicon.png,markdown.html
 Summary: Generate and analyze experimental designs
-Description: This procedure generates experimental designs (optimal, f
- actorial,Plackett-Burman, response surface, Box-Behnken, CCD, Taguchi
- , and LatinHypercube) and optionally analyzes collected response data
-  from them.
+Description: Generates experimental designs (optimal, factorial, Placket
+ t-Burman, response surface, Box-Behnken, CCD, Taguchi, Latin hypercube,
+  definitive screening, mixtures) and analyzes the results: coded-factor
+  models, ANOVA, multi-response optimization, and an interactive Model a
+ nd Optimizer Lab in the HTML report. Variables are dragged from the sou
+ rce list.
 Author: JKP, IBM SPSS
-Version: 3.0.1
+Version: 3.1.0
 Product-Version: 18
-Date: 23-sep-2026
+Date: 20-oct-2026
 Categories: experimental design
 Plugins: R
-R-Packages: AlgDesign
+R-Packages: AlgDesign,jsonlite

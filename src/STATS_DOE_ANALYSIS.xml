@@ -19,6 +19,90 @@
 			<EnumValue>no</EnumValue>
 		</Parameter>
 		<Parameter Name="VARNAMES" ParameterType="VariableNameList"/>
+		<!-- 3.1.0: factor table of the dialog (one row per new factor) -->
+		<Parameter Name="NFACTORS" ParameterType="Integer"/>
+		<Parameter Name="FACTORSFROMDATA" ParameterType="Keyword"/>
+		<!-- 3.1.0: extreme-vertices mixture designs -->
+		<Parameter Name="EVDEGREE" ParameterType="Integer"/>
+		<!-- 3.1.0: split-plot designs (hard-to-change factors) -->
+		<Parameter Name="HTC" ParameterType="VariableNameList"/>
+		<Parameter Name="NAME1" ParameterType="VariableName"/>
+		<Parameter Name="LOW1" ParameterType="Number"/>
+		<Parameter Name="HIGH1" ParameterType="Number"/>
+		<Parameter Name="LEVELS1" ParameterType="Integer"/>
+		<Parameter Name="FACTOR1" ParameterType="Keyword"/>
+		<Parameter Name="NAME2" ParameterType="VariableName"/>
+		<Parameter Name="LOW2" ParameterType="Number"/>
+		<Parameter Name="HIGH2" ParameterType="Number"/>
+		<Parameter Name="LEVELS2" ParameterType="Integer"/>
+		<Parameter Name="FACTOR2" ParameterType="Keyword"/>
+		<Parameter Name="NAME3" ParameterType="VariableName"/>
+		<Parameter Name="LOW3" ParameterType="Number"/>
+		<Parameter Name="HIGH3" ParameterType="Number"/>
+		<Parameter Name="LEVELS3" ParameterType="Integer"/>
+		<Parameter Name="FACTOR3" ParameterType="Keyword"/>
+		<Parameter Name="NAME4" ParameterType="VariableName"/>
+		<Parameter Name="LOW4" ParameterType="Number"/>
+		<Parameter Name="HIGH4" ParameterType="Number"/>
+		<Parameter Name="LEVELS4" ParameterType="Integer"/>
+		<Parameter Name="FACTOR4" ParameterType="Keyword"/>
+		<Parameter Name="NAME5" ParameterType="VariableName"/>
+		<Parameter Name="LOW5" ParameterType="Number"/>
+		<Parameter Name="HIGH5" ParameterType="Number"/>
+		<Parameter Name="LEVELS5" ParameterType="Integer"/>
+		<Parameter Name="FACTOR5" ParameterType="Keyword"/>
+		<Parameter Name="NAME6" ParameterType="VariableName"/>
+		<Parameter Name="LOW6" ParameterType="Number"/>
+		<Parameter Name="HIGH6" ParameterType="Number"/>
+		<Parameter Name="LEVELS6" ParameterType="Integer"/>
+		<Parameter Name="FACTOR6" ParameterType="Keyword"/>
+		<Parameter Name="NAME7" ParameterType="VariableName"/>
+		<Parameter Name="LOW7" ParameterType="Number"/>
+		<Parameter Name="HIGH7" ParameterType="Number"/>
+		<Parameter Name="LEVELS7" ParameterType="Integer"/>
+		<Parameter Name="FACTOR7" ParameterType="Keyword"/>
+		<Parameter Name="NAME8" ParameterType="VariableName"/>
+		<Parameter Name="LOW8" ParameterType="Number"/>
+		<Parameter Name="HIGH8" ParameterType="Number"/>
+		<Parameter Name="LEVELS8" ParameterType="Integer"/>
+		<Parameter Name="FACTOR8" ParameterType="Keyword"/>
+		<Parameter Name="NAME9" ParameterType="VariableName"/>
+		<Parameter Name="LOW9" ParameterType="Number"/>
+		<Parameter Name="HIGH9" ParameterType="Number"/>
+		<Parameter Name="LEVELS9" ParameterType="Integer"/>
+		<Parameter Name="FACTOR9" ParameterType="Keyword"/>
+		<Parameter Name="NAME10" ParameterType="VariableName"/>
+		<Parameter Name="LOW10" ParameterType="Number"/>
+		<Parameter Name="HIGH10" ParameterType="Number"/>
+		<Parameter Name="LEVELS10" ParameterType="Integer"/>
+		<Parameter Name="FACTOR10" ParameterType="Keyword"/>
+		<Parameter Name="NAME11" ParameterType="VariableName"/>
+		<Parameter Name="LOW11" ParameterType="Number"/>
+		<Parameter Name="HIGH11" ParameterType="Number"/>
+		<Parameter Name="LEVELS11" ParameterType="Integer"/>
+		<Parameter Name="FACTOR11" ParameterType="Keyword"/>
+		<Parameter Name="NAME12" ParameterType="VariableName"/>
+		<Parameter Name="LOW12" ParameterType="Number"/>
+		<Parameter Name="HIGH12" ParameterType="Number"/>
+		<Parameter Name="LEVELS12" ParameterType="Integer"/>
+		<Parameter Name="FACTOR12" ParameterType="Keyword"/>
+		<Parameter Name="NAME13" ParameterType="VariableName"/>
+		<Parameter Name="LOW13" ParameterType="Number"/>
+		<Parameter Name="HIGH13" ParameterType="Number"/>
+		<Parameter Name="LEVELS13" ParameterType="Integer"/>
+		<Parameter Name="FACTOR13" ParameterType="Keyword"/>
+		<Parameter Name="NAME14" ParameterType="VariableName"/>
+		<Parameter Name="LOW14" ParameterType="Number"/>
+		<Parameter Name="HIGH14" ParameterType="Number"/>
+		<Parameter Name="LEVELS14" ParameterType="Integer"/>
+		<Parameter Name="FACTOR14" ParameterType="Keyword"/>
+		<Parameter Name="NAME15" ParameterType="VariableName"/>
+		<Parameter Name="LOW15" ParameterType="Number"/>
+		<Parameter Name="HIGH15" ParameterType="Number"/>
+		<Parameter Name="LEVELS15" ParameterType="Integer"/>
+		<Parameter Name="FACTOR15" ParameterType="Keyword"/>
+		<!-- 3.1.0: existing factor columns chosen in the dialog (analysis) -->
+		<Parameter Name="FACTORVARS" ParameterType="VariableNameList"/>
 		<Parameter Name="FORMULA" ParameterType="QuotedString"/>
 		<Parameter Name="FACTORS" ParameterType="KeywordList">
 			<EnumValue>yes</EnumValue>
@@ -46,6 +130,7 @@
 			<EnumValue>fullfactorial</EnumValue>
 			<EnumValue>simplexlattice</EnumValue>
 			<EnumValue>simplexcentroid</EnumValue>
+			<EnumValue>extremevertices</EnumValue>
 		</Parameter>
 		<Parameter Name="LATTICEDEGREE" ParameterType="Integer"/>
 		<Parameter Name="AUGMENTMIX" ParameterType="Keyword"/>
@@ -144,6 +229,13 @@
 		<Parameter Name="OPTDETAILTABLE" ParameterType="Keyword"/>
 		<!-- NEW: Screening Designs subdialog - effect ranking/summary table -->
 		<Parameter Name="SCREENINGSUMMARY" ParameterType="Keyword"/>
+		<!-- 3.1.0: interactive Model and Optimizer Lab in the HTML report -->
+		<Parameter Name="LAB" ParameterType="Keyword"/>
+		<!-- 3.1.0: next-experiment advisor -->
+		<Parameter Name="ADVISOR" ParameterType="Keyword"/>
+		<!-- 3.1.0: uncertainty map -->
+		<Parameter Name="UNCERTAINTYMAP" ParameterType="Keyword"/>
+		<Parameter Name="UNCERTAINTYLIMIT" ParameterType="Number"/>
 	</Subcommand>
 	<!-- NEW: Power and Sample Size calculator (plan run counts before generating a design) -->
 	<Subcommand Name="POWER" Occurrence="Optional">
@@ -161,6 +253,11 @@
 			<EnumValue>legacy</EnumValue>
 		</Parameter>
 		<Parameter Name="TERMS" ParameterType="QuotedString"/>
+		<!-- 3.1.0: standard model shortcut from the Model dialog -->
+		<Parameter Name="TERMSET" ParameterType="Keyword"/>
+		<!-- 3.1.0: analyze variability -->
+		<Parameter Name="VARIABILITY" ParameterType="Keyword"/>
+		<Parameter Name="WHOLEPLOT" ParameterType="VariableName"/>
 		<Parameter Name="ALPHA" ParameterType="Number"/>
 		<Parameter Name="BACKWARD" ParameterType="Keyword"/>
 		<Parameter Name="ALPHAREMOVE" ParameterType="Number"/>
@@ -194,6 +291,10 @@
 		<Parameter Name="WEIGHTS" ParameterType="NumberList"/>
 		<Parameter Name="IMPORTANCE" ParameterType="NumberList"/>
 		<Parameter Name="HOLD" ParameterType="QuotedString"/>
+		<!-- 3.1.0: profit / cost goal -->
+		<Parameter Name="PROFIT" ParameterType="QuotedString"/>
+		<Parameter Name="PROFITGOAL" ParameterType="Keyword"/>
+		<Parameter Name="PROFITLIMITS" ParameterType="QuotedString"/>
 		<Parameter Name="SOLUTIONS" ParameterType="Integer"/>
 		<Parameter Name="OVERLAY" ParameterType="Keyword"/>
 		<Parameter Name="ROBUST" ParameterType="Keyword"/>
